@@ -116,11 +116,12 @@ class IndependentClaudeHook(unittest.TestCase):
         self.assertIsNone(self.decision('true && agentj file show a.png --json'))
         self.assertEqual(self.decision('agentj file show 图片.png --json'), 'ask')
         self.assertEqual(self.decision('agentj file show a.png --label "image"'), 'ask')
+        self.assertEqual(self.decision('agentj file send a.png --to wechat'), 'ask')
 
     def test_other_commands_do_not_receive_file_admission(self):
         for command in (
             'agentj file show a.png --to wechat', 'agentj file show a.png | cat',
-            'agentj file send a.png --to wechat', 'agentj screen ask a.png --reply done',
+            'agentj file send a.png --to wechat > report', 'agentj screen ask a.png --reply done',
             'agentj notify --from probe hello',
         ):
             self.assertIsNone(self.decision(command), command)

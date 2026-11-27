@@ -3039,6 +3039,8 @@ class Elevator:
                 cwd = req.get("cwd") if isinstance(req.get("cwd"), str) and os.path.isabs(req["cwd"]) else None
                 if peers is None or (req.get("t") == "sx" and getattr(peers, "keys", None) is None):
                     res = {"result":"failure", "why":"no_owner_session", "client_downloaded":False} if req.get("t") == "file_show" else {"result":"refused", "why":"friends_off"}
+                elif req.get("t") == "file_show":
+                    res = await peers.xfer.broker.file_receipt(req)
                 else:
                     res = peers.xfer.broker.receipt(req)
             else:

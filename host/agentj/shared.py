@@ -1318,7 +1318,8 @@ class SharedClaudeAgent(Agent):
                 self._compact_read_wait = None
                 self._compact_recover_prompt = None
                 self.host.agent_notice(handoff.phone_line(getattr(self.host, "lang", "zh"), "compact"))
-        if name in ("PostToolUse", "PostToolUseFailure") and not event.get("agent_id") and getattr(self.host, "peers", None) is not None:
+        if (name in ("PostToolUse", "PostToolUseFailure") and not event.get("agent_id")
+                and not event.get("parent_tool_use_id") and getattr(self.host, "peers", None) is not None):
             response = event.get("tool_response") or {}
             success = name == "PostToolUse" and isinstance(response, dict) and not response.get("is_error") and not response.get("interrupted") and response.get("exitCode", response.get("exit_code", 0)) == 0
             self.host.peers.xfer.broker.complete(event.get("tool_use_id"), success, response,
@@ -1337,7 +1338,16 @@ class SharedClaudeAgent(Agent):
                 if answer.get('behavior') != 'allow':
                     return {'hookSpecificOutput': {'hookEventName':'PreToolUse', 'permissionDecision':'deny',
                         'permissionDecisionReason':answer.get('message') or 'Owner verification required for protected control files.'}}
-            return await retry.before(event, gone) if retry is not None else {}
+            prior = await retry.before(event, gone) if retry is not None else {}
+            if prior:
+                return prior
+            if getattr(self.host, "peers", None) is not None and not (event.get("agent_id") or event.get("parent_tool_use_id")):
+                from .owner_broker import parse as owner_command
+                req = owner_command(tool, inp, self.cfg["dir"])
+                if req and req['t'] == 'file_show':
+                    return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                            'permissionDecisionReason': 'Agent J checks the current owner page for this file operation.'}}
+            return {}
         if name == "SessionStart" and not event.get("agent_id"):
             # P116 (B11): startup / resume / clear / compact of the served session reads the identity (again)
             note = self._handoff_context(event.get("source"))
@@ -1357,7 +1367,8 @@ class SharedClaudeAgent(Agent):
 
         if name == "PermissionRequest":
             from .owner_broker import parse as secret_command
-            if getattr(self.host, "peers", None) is not None and not event.get("agent_id") and secret_command(event.get("tool_name"), event.get("tool_input"), self.cfg["dir"]):
+            if (getattr(self.host, "peers", None) is not None and not (event.get("agent_id") or event.get("parent_tool_use_id"))
+                    and secret_command(event.get("tool_name"), event.get("tool_input"), self.cfg["dir"])):
                 # Refresh the host-read transcript, not a tool record supplied by this hook.
                 if getattr(self, "transcript", None) is not None:
                     self.read_transcript()

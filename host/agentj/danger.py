@@ -2192,16 +2192,16 @@ def hook_main(argv: list[str]) -> int:
                     'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
                     'permissionDecisionReason': delete_redirect.hint(prog)}})
 
-        if (not emitted and "file-show-admission" in argv[1:] and ev.get("tool_name") == "Bash"
+        if (not emitted and "file-show-admission" in argv[1:]
                 and not ev.get("agent_id") and not ev.get("parent_tool_use_id")):
             from . import owner_broker
-            request = owner_broker.parse("Bash", ev.get("tool_input"), ev.get("cwd") or os.getcwd())
-            if request and request["t"] == "file_show" and "delivery" not in request:
+            request = owner_broker.parse(ev.get("tool_name"), ev.get("tool_input"), ev.get("cwd") or os.getcwd())
+            if request and request["t"] == "file_show":
                 # Ask Claude to invoke the host's existing permission tool even for a native allow.
                 # The host still requires the matching main stream event and live owner page.
                 emit({"hookSpecificOutput": {
                     "hookEventName": "PreToolUse", "permissionDecision": "ask",
-                    "permissionDecisionReason": "Agent J checks the current owner page for this attachment.",
+                    "permissionDecisionReason": "Agent J checks the current owner page for this file operation.",
                 }})
 
         if hint and not emitted:

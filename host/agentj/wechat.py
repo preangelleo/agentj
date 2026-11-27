@@ -712,11 +712,13 @@ class WeChat:
 
     async def receive(self, api, msg, generation):
         d = self.store.data
+        if generation != d['generation'] or not d['account'] or d.get('binding_error') or self.h.stopped() or self.closed:
+            return
         if not isinstance(msg, dict):
             self.store.count('ignored_malformed')
             return
         if (msg.get('from_user_id') != d['account'].get('ilink_user_id') or msg.get('group_id')
-                or msg.get('message_type') != 1 or msg.get('delete_time_ms')):
+                or type(msg.get('message_type')) is not int or msg['message_type'] != 1 or msg.get('delete_time_ms')):
             self.store.count('ignored_non_owner_group_bot')
             return
         mid = msg.get('message_id') or msg.get('client_id') or msg.get('seq')
@@ -727,6 +729,8 @@ class WeChat:
         if not isinstance(items, list) or len(items) > 10:
             self.store.count('ignored_malformed')
             return
+        from .wechat_forward import inbound_file_binding
+        binding = inbound_file_binding(self, msg, generation, items)
         wd = (self.h.agent_cfg or {}).get('dir')
         if not wd:
             raise Failure('no_work_folder')
@@ -794,10 +798,10 @@ class WeChat:
             d['context_stale'] = False   # P554: the owner's message reopens forwarding after a platform refusal
         self.store.count('received')
         r['generation'] = generation
-        await self.to_main(api, r, generation, body, placed, input_images)
+        await self.to_main(api, r, generation, body, placed, input_images, file_binding=binding)
         self.publish()
 
-    async def to_main(self, api, r, generation, body, placed, input_images):
+    async def to_main(self, api, r, generation, body, placed, input_images, *, file_binding=None):
         """Queue the owner WeChat message in the main conversation; Web App retains all approval ownership.
     Unsupported images use the owner Codex drawer; completion returns to WeChat."""
         from types import SimpleNamespace
@@ -836,7 +840,8 @@ class WeChat:
                                  kind=inbox.kind_of(mime), path=path, origin='file', secs=None, voice='')
                  for path, name, mime, size, _typ in placed]
         src = provenance.wechat_owner()
-        session = SimpleNamespace(device='wechat:owner', name=oc.name('wechat', lang), cid=0, source_kind='wechat', provenance=src)
+        session = SimpleNamespace(device='wechat:owner', name=oc.name('wechat', lang), cid=0, source_kind='wechat',
+                                  provenance=src, wechat_file_binding=file_binding)
 
         async def on_card():   # a step waits for a Web App card: this chat only learns where to confirm
             if generation == self.store.data['generation'] and not self.h.stopped() and not self.closed:
@@ -952,23 +957,33 @@ class WeChat:
                                                    mime.split('/')[1].replace('jpeg', 'jpg'), mime))
         return out
 
-    async def send(self, api, text, generation, *, item=None):
+    async def send(self, api, text, generation, *, item=None, file_binding=None, valid=None):
         d = self.store.data
         if generation != d['generation'] or self.h.stopped() or not d['account']:
             raise Failure('stopped')
         if not d['context']:
             raise Failure('no_context')
+        account, context = (d['account'], d['context']) if file_binding is None else (file_binding['account'], file_binding['context'])
+        payload = {'msg': {'from_user_id': '', 'to_user_id': account['ilink_user_id'],
+                           'client_id': 'agentj-' + secrets.token_hex(16), 'message_type': 2, 'message_state': 2,
+                           'context_token': context, 'item_list': [item or {'type': 1, 'text_item': {'text': text}}]}}
         try:
-            await self.call(api, 'sendmessage', {'msg': {'from_user_id': '', 'to_user_id': d['account']['ilink_user_id'],
-                            'client_id': 'agentj-' + secrets.token_hex(16), 'message_type': 2, 'message_state': 2,
-                            'context_token': d['context'], 'item_list': [item or {'type': 1, 'text_item': {'text': text}}]}})
+            if file_binding is None:
+                await self.call(api, 'sendmessage', payload)
+            else:
+                def send_pinned():
+                    if not valid():
+                        raise Failure('file_binding_changed')
+                    api.call('sendmessage', payload)
+                await asyncio.to_thread(send_pinned)
         except Failure as e:
             # P554: the platform refused this context (ret ≠ 0, not -14 session expiry) → remember until the owner writes again.
-            if e.code == 'api_error' and e.ret != -14 and generation == d['generation']:
+            if e.code == 'api_error' and e.ret != -14 and generation == d['generation'] and (valid is None or valid()):
                 self._stale(True)
                 raise Failure('context_rejected', ret=e.ret) from None
             raise
-        self._stale(False)
+        if valid is None or valid():
+            self._stale(False)
         self.store.count('sent')
 
     def _stale(self, value):

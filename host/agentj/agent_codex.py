@@ -1022,12 +1022,22 @@ class CodexAgent(Agent):
                         calls.pop(next(iter(calls)))
                 else:
                     calls.pop(it["id"], None)
-            if (method == "item/started" and it.get("type") == "commandExecution" and th == self.tid
-                    and getattr(self.host, "peers", None) is not None):
-                from . import feedback_native
-                feedback_native.codex_started(self, p, it)
-            if method == "item/completed" and it.get("type") == "commandExecution" and th == self.tid and getattr(self.host, "peers", None) is not None:
-                self.host.peers.xfer.broker.complete(it.get("id"), it.get("status") == "completed" and it.get("exitCode") == 0, it.get("aggregatedOutput"), native=(th, p.get("turnId")))
+            if it.get("type") == "commandExecution" and th == self.tid and getattr(self.host, "peers", None) is not None:
+                cmd, cwd = it.get("command"), it.get("cwd")
+                shell = None
+                if (it.get("source") in ("agent", "unifiedExecStartup") and isinstance(cmd, str)
+                        and isinstance(cwd, str) and os.path.isabs(cwd)):
+                    shell = (unwrap_shell(cmd), os.path.abspath(cwd))
+                broker = self.host.peers.xfer.broker
+                native = (th, p.get("turnId"))
+                if method == "item/started":
+                    from . import feedback_native
+                    feedback_native.codex_started(self, p, it)
+                    broker.observe_shell_start(it.get("id"), native, shell if it.get("status") == "inProgress" else None)
+                else:
+                    exitcode = it.get("exitCode")
+                    broker.complete(it.get("id"), it.get("status") == "completed" and type(exitcode) is int and exitcode == 0,
+                                    it.get("aggregatedOutput"), native=native, native_shell=shell)
             if isinstance(it.get("id"), str) and it.get("type") in ("fileChange", "commandExecution"):
                 self.items[it["id"]] = it
                 if len(self.items) > 500:
@@ -1170,9 +1180,15 @@ class CodexAgent(Agent):
             why = beyond_sandbox(self.thread.get("sandbox"), method, "Bash", {"command": inner}, p, None, self.cfg["dir"])
             if why:
                 return self._refuse(rid, "Bash", inp, {"decision": "decline"}, why, _native_request=p)
-            if getattr(self.host, "peers", None) is not None and not self.research and not codex_children.is_child(self):
+            if (getattr(self.host, "peers", None) is not None and not self.research and not self.cfg.get("_workflow_ceo")
+                    and not codex_children.is_child(self) and p.get("kind") != "writeStdin"):
+                from .owner_broker import codex_live
+                cwd = os.path.abspath(p.get("cwd") or self.cfg["dir"])
+                native, proc = (self.tid, p.get("turnId")), getattr(self, "proc", None)
                 self.__dict__.setdefault("secret_native_calls", {})[str(rid)] = p.get("itemId")
-                self.host.peers.xfer.broker.register(p.get("itemId"), "Bash", inp, p.get("cwd") or self.cfg["dir"], raw={"command":inner}, native=(self.tid, p.get("turnId")))
+                self.host.peers.xfer.broker.register(p.get("itemId"), "Bash", inp, cwd, raw={"command": inner},
+                                                    native=native, native_shell=(inner, cwd),
+                                                    native_live=lambda: codex_live(self, native, proc))
             self._bg(self._decide(rid, "Bash", inp, {"decision": "accept"}, {"decision": "decline"}, batch))
         elif method == "item/fileChange/requestApproval":
             it = self.items.get(p.get("itemId")) or {}

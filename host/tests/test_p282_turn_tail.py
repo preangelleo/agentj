@@ -134,6 +134,7 @@ class SharedKeep(unittest.IsolatedAsyncioTestCase):
     def agent(self, tmp):
         from agentj.shared_codex import SharedCodexAgent
         host = Mock()
+        host.peers.xfer.broker.drain = AsyncMock(return_value=None)
         host.st.agent_session.return_value = None
         a = SharedCodexAgent(host, {"kind": "codex", "dir": tmp, "_workflow_ceo": True,
                                     "shared_session_id": "11111111-1111-1111-1111-111111111111"})

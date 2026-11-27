@@ -85,6 +85,48 @@ def key(req):
     return hashlib.sha256(json.dumps(req, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def codex_live(agent, native, proc):
+    return (all(isinstance(value, str) and value for value in native)
+            and agent.host.agent is agent and proc is not None and agent.proc is proc and proc.returncode is None
+            and getattr(agent, 'turn_proc', None) is proc and native == (agent.tid, agent.turn_id))
+
+
+async def codex_prehook(agent, event, tool, inp):
+    """Use the real shell child hook. A code-mode program cannot describe a broker command."""
+    if (tool != 'Bash' or not isinstance(inp, dict) or not isinstance(inp.get('command'), str)
+            or not event.get('_agentj_path_authenticated') or event.get('_agentj_child')
+            or event.get('agent_id') or event.get('parent_tool_use_id')
+            or getattr(agent, 'research', False) or agent.cfg.get('_workflow_ceo')):
+        return {}
+    call, cwd = event.get('tool_use_id'), event.get('cwd')
+    native = (event.get('session_id'), event.get('turn_id'))
+    proc = getattr(agent, 'proc', None)
+    peers = getattr(agent.host, 'peers', None)
+
+    def live():
+        return codex_live(agent, native, proc)
+
+    if (peers is None or not all(isinstance(v, str) and v for v in (call, cwd, *native))
+            or not os.path.isabs(cwd) or not live()):
+        return {}
+    cwd = os.path.abspath(cwd)
+    req = parse(tool, inp, cwd)
+    if not req or req['t'] != 'file_show':
+        return {}
+    from .approval_jev import with_cwd
+    command = inp['command']
+    policy_input = {'command': with_cwd(command, cwd, agent.cfg['dir'])}
+    broker = peers.xfer.broker
+    if not broker.register(call, tool, policy_input, cwd, raw=inp, native=native, prehook=True,
+                           native_shell=(command, cwd), native_live=live, require_start=True):
+        return {}
+    answer = await broker.execute(tool, policy_input, call, event.get('_agentj_gone'))
+    if not answer or answer['behavior'] != 'allow':
+        return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                'permissionDecisionReason': (answer or {}).get('message') or 'No live native file-call admission'}}
+    return {}  # Only the native harness can run or approve the shell call.
+
+
 class Broker:
     def __init__(self, xfer):
         self.xfer, self.calls, self.receipts, self.jobs = xfer, {}, {}, set()
@@ -98,7 +140,8 @@ class Broker:
                 and cfg.get('session_mode') != 'shared' and getattr(a, 'proc', None) is not None
                 and getattr(a, 'kind', None) in ('claude', 'codex'))
 
-    def register(self, call, tool, inp, cwd, raw=None, native=None, *, prehook=False):
+    def register(self, call, tool, inp, cwd, raw=None, native=None, *, prehook=False,
+                 native_shell=None, native_live=None, require_start=False):
         x = self.xfer
         req = parse(tool, raw if raw is not None else inp, cwd)
         if req is None and self.feedback_applicable():
@@ -107,6 +150,16 @@ class Broker:
         execution = getattr(x, 'execution', None)
         if not req or not isinstance(call, str) or not execution or not execution.live or execution.send is None:
             return
+        if req['t'] == 'file_show' and native_shell is not None:
+            old = self.calls.get(call)
+            if old and old['execution'] is execution and old.get('native') == native:
+                if old.get('native_shell') != native_shell or old['request'] != req:
+                    old['invalid_native_shell'] = True
+                elif not prehook:
+                    old['rpc_input'] = copy.deepcopy(inp)
+                if old.get('start_ready') is not None and (not prehook or old.get('invalid_native_shell')):
+                    old['start_ready'].set()
+                return
         if req['t'] == 'support_native' and call in self.calls:
             old = self.calls[call]
             if old.get('request') == req and old.get('native') == native and old.get('execution') is execution:
@@ -134,9 +187,13 @@ class Broker:
         self.calls[call] = {'request':req, 'tool':tool, 'input':inp, 'execution':execution,
                             'source':provenance.turn_source(x.svc.host.agent), 'native':native,
                             'project_root': os.path.realpath((x.svc.host.agent_cfg or {}).get('dir') or '')}
+        row = self.calls[call]
+        if req['t'] == 'file_show' and native_shell is not None:
+            row.update(native_shell=native_shell, native_live=native_live, decision_ready=asyncio.Event())
+            if require_start:
+                row['start_ready'] = asyncio.Event()
         if req['t'] == 'support_native':
             from .feedback_native import Binding
-            row = self.calls[call]
             row.update(input=copy.deepcopy(inp), registered_at=time.monotonic(), awaiting_native=prehook)
             if prehook:
                 row['native_ready'] = asyncio.Event()
@@ -146,12 +203,24 @@ class Broker:
             except (ValueError, AttributeError, OSError): self.calls.pop(call, None)
         while len(self.calls) > 64:
             self.calls.pop(next(iter(self.calls)))
+        return self.calls.get(call)
+
+    def observe_shell_start(self, call, native, shell):
+        row = self.calls.get(call)
+        if row is not None and row.get('native') == native and row.get('start_ready') is not None:
+            if row['native_shell'] != shell:
+                row['invalid_native_shell'] = True
+            row['start_ready'].set()
 
     async def execute(self, tool, inp, call=None, gone=None):
         x = self.xfer
-        matches = [(cid, row) for cid, row in self.calls.items() if row['tool'] == tool and (call is None or call == cid)
-                   and (row['input'] == inp or call == cid and row.get('rpc_input') == inp)]
+        candidates = [(cid, row) for cid, row in self.calls.items() if row['tool'] == tool
+                      and (row['input'] == inp or row.get('rpc_input') == inp)]
+        matches = [(cid, row) for cid, row in candidates if call == cid
+                   or call is None and row.get('native_shell') is None and row['input'] == inp]
         if not matches:
+            if any(row.get('native_shell') is not None for _, row in candidates):
+                return {'behavior': 'deny', 'message': 'No matching native file-call admission'}
             missing = parse(tool, inp, (getattr(self.xfer.svc.host, 'agent_cfg', None) or {}).get('dir') or os.getcwd())
             if missing is None and self.feedback_applicable():
                 from . import feedback_native
@@ -170,11 +239,38 @@ class Broker:
             return None
         if len(matches) != 1:
             return {'behavior':'deny', 'message':'Ambiguous native secret call'}
-        cid, row = matches[0]
+        _, row = matches[0]
+        if row.get('invalid_native_shell'):
+            return {'behavior': 'deny', 'message': 'Conflicting native file-call evidence'}
         if row.get('awaiting_native'):
             return {'behavior':'deny', 'message':'No live native feedback admission'}
         if row['request']['t'] == 'support_native':
             return await self._approve_feedback(row, tool, inp, gone)
+        if row.get('native_shell') is not None:
+            return await self._decide_native_file(row, tool, inp, gone)
+        return await self._execute_row(row, tool, inp, gone)
+
+    async def _decide_native_file(self, row, tool, inp, gone):
+        ready = row['decision_ready']
+        if row.get('decision_started'):
+            await ready.wait()
+            answer = row['native_decision']
+            if answer['behavior'] != 'allow':
+                return answer
+            if row['check']() and (gone is None or not gone.done()):
+                return {'behavior': 'allow', 'updatedInput': inp}
+            return {'behavior': 'deny', 'message': 'Native file call expired'}
+        row['decision_started'] = True
+        row['native_decision'] = {'behavior': 'deny', 'message': 'Native file call expired'}
+        try:
+            answer = await self._execute_row(row, tool, inp, gone)
+            row['native_decision'] = answer
+            return answer
+        finally:
+            ready.set()
+
+    async def _execute_row(self, row, tool, inp, gone):
+        x = self.xfer
         if row.get('admitted'):
             # PreToolUse observes the call even when native rules skip PermissionRequest.
             # A later PermissionRequest for the *same* file call must not invalidate it.
@@ -182,10 +278,15 @@ class Broker:
                 return {'behavior':'allow', 'updatedInput':inp}
             return {'behavior':'deny', 'message':'Native secret call already admitted'}
         execution = row['execution']
+        host = x.svc.host
+        origin_binding = None
         def live():
-            return (execution.live and getattr(x, 'execution', None) is execution
-                    and execution.send is getattr(x.svc.host.agent, 'cur_send', None)
-                    and not x.svc.host.stopped())
+            native_live = row.get('native_live')
+            return (not row.get('invalid_native_shell') and (native_live is None or native_live())
+                    and execution.live and getattr(x, 'execution', None) is execution
+                    and execution.send is getattr(host.agent, 'cur_send', None) and not host.stopped()
+                    and (origin_binding is None
+                         or file_show.source_refusal(host, req, row['source'], execution.send, origin_binding) is None))
         if not live() or (gone is not None and gone.done()):
             return {'behavior':'deny', 'message':'Native secret call expired'}
         from . import policy_registry
@@ -193,29 +294,37 @@ class Broker:
             return {'behavior':'deny', 'message':'Native secret call blocked by policy'}
         req = dict(row['request'])
         if req['t'] == 'file_show':
-            host = x.svc.host
+            from . import file_show
             page = host.hist.get(getattr(host, 'cur_turn', None))
             ids = next((ids for ids in host.hist.parts.values() if page and page['id'] in ids), [page['id']] if page else [])
             if (os.path.realpath((host.agent_cfg or {}).get('dir') or '') != row['project_root']
-                    or not provenance.is_owner(row['source']) or not page or page.get('end') != 'open'
-                    or execution.send.turn not in ids):
-                from .file_show import OWNER_HINT
-                return {'behavior': 'deny', 'message': OWNER_HINT if 'delivery' not in req else 'No active owner page'}
+                    or not page or page.get('end') != 'open' or execution.send.turn not in ids):
+                return {'behavior': 'deny', 'message': file_show.OWNER_HINT if 'delivery' not in req else file_show.SEND_FAILURE_HINTS['no_owner_session']}
+            if provenance.owner_channel(row['source']) == 'wechat':
+                origin_binding = getattr(execution.send, 'wechat_file_binding', None)
+            if why := file_show.source_refusal(host, req, row['source'], execution.send, origin_binding):
+                fallback = file_show.OWNER_HINT if 'delivery' not in req else file_show.SEND_FAILURE_HINTS['no_owner_session']
+                return {'behavior': 'deny', 'message': file_show.WECHAT_FILE_HINTS.get(why) or file_show.SEND_FAILURE_HINTS.get(why, fallback)}
+            path = os.path.abspath(os.path.join(req['cwd'], os.path.expanduser(req['path'])))
+            if hint := file_show.generated_image_hint(host, row['project_root'], path):
+                return {'behavior': 'deny', 'message': hint}
             if req.get('delivery') == 'wechat':
                 from . import wechat_forward
-                binding = wechat_forward.file_binding(host)
+                binding = origin_binding if origin_binding is not None else wechat_forward.file_binding(host)
                 if binding is None:
-                    return {'behavior': 'deny', 'message': 'Bound owner WeChat needs a message before sending.'}
+                    return {'behavior': 'deny', 'message': '请先绑定微信，再在私聊中发一条消息。 / Connect WeChat, then send a message in the private chat first.'}
                 try:
-                    await asyncio.to_thread(wechat_forward.file_secret_check, row['project_root'], os.path.abspath(os.path.join(req['cwd'], os.path.expanduser(req['path']))))
+                    await asyncio.to_thread(wechat_forward.file_secret_check, row['project_root'], path)
                 except (OSError, ValueError):
                     return {'behavior': 'deny', 'message': 'File delivery privacy check refused.'}
+                if origin_binding is not None and not live():
+                    return {'behavior': 'deny', 'message': file_show.SEND_FAILURE_HINTS['binding_changed']}
                 with owner_call.request(live), provenance.request_source(row['source']):
                     answer = await host.ask(tool, inp, gone, batch=False)
                 if answer.get('behavior') != 'allow':
                     return answer
                 if not live() or not wechat_forward.file_binding_live(host, binding):
-                    return {'behavior': 'deny', 'message': 'Original owner execution or WeChat binding changed.'}
+                    return {'behavior': 'deny', 'message': file_show.SEND_FAILURE_HINTS['binding_changed']}
                 row['file_delivery'] = binding
         if req.get('op') == 'grant':
             path = pathlib.Path(req.pop('file')).expanduser()
@@ -289,13 +398,19 @@ class Broker:
         finally:
             decision.set_result(answer)
 
-    def complete(self, call, success, output, tool=None, inp=None, cwd=None, native=None, child=False):
+    def complete(self, call, success, output, tool=None, inp=None, cwd=None, native=None, child=False, *, native_shell=None):
         row = self.calls.get(call)
-        if row and row.get('feedback') and child:
-            return  # a nested native result never completes a root's feedback call
+        if child:
+            return  # a sub-agent result never completes the main thread's call
         if row and row.get('native_ready') and row.get('native') == native and not row.get('issued'):
             row['feedback'].closed = True
             row['native_ready'].set()
+            self.calls.pop(call)
+            return
+        if row and row.get('native_shell') is not None and row.get('native') == native and not row.get('issued'):
+            row['invalid_native_shell'] = True
+            if row.get('start_ready') is not None:
+                row['start_ready'].set()
             self.calls.pop(call)
             return
         if not row or not row.get('admitted') or not row.get('issued') or row.get('native') != native:
@@ -303,7 +418,7 @@ class Broker:
         if tool is not None and (tool != row['tool'] or inp != row['input'] or os.path.abspath(cwd or '') != row['request']['cwd']):
             return
         self.calls.pop(call)
-        if not success:
+        if not success or (row.get('native_shell') is not None and row['native_shell'] != native_shell):
             return
         pending = _pending(row)
         if not _contains(output, pending):
@@ -342,6 +457,10 @@ class Broker:
                 result = await x.cli(req, req['cwd'])
         if req['t'] != 'file_show':
             self.receipts[key(req)] = (time.monotonic() + 120, result)
+        elif req.get('delivery') == 'wechat':
+            why = result.get('why')
+            if hint := file_show.SEND_FAILURE_HINTS.get(why) or file_show.WECHAT_FILE_HINTS.get(why):
+                result.setdefault('hint', hint)
         while len(self.receipts) > 64:
             self.receipts.pop(next(iter(self.receipts)))
         x.svc.host.agent_notice(('FILE_SEND_RESULT: ' if req.get('delivery') == 'wechat' else 'FILE_SHOW_RESULT: ' if req['t'] == 'file_show' else 'SECRET_TASK_RESULT: ') + json.dumps(result, ensure_ascii=False))
@@ -366,6 +485,37 @@ class Broker:
         if self.jobs:
             await asyncio.gather(*list(self.jobs))
 
+    async def file_receipt(self, req):
+        """Wait only on exact pending calls already observed on a native channel."""
+        async def ready(row):
+            await row['decision_ready'].wait()
+            if not row.get('admitted'):
+                return False
+            if row.get('start_ready') is not None:
+                await row['start_ready'].wait()
+            return row['check']()
+
+        execution = getattr(self.xfer, 'execution', None)
+        pending = {asyncio.create_task(ready(row)) for row in self.calls.values()
+                   if row.get('decision_ready') is not None and row['execution'] is execution
+                   and execution.live and row['request'] == req and not row.get('invalid_native_shell')}
+        try:
+            async with asyncio.timeout(25):
+                # A native call that was never started must not hold up a later valid call.
+                while pending:
+                    done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                    if any(task.result() for task in done):
+                        break
+        except TimeoutError:
+            from .file_show import failure
+            return failure('native_admission_expired')
+        finally:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        return self.receipt(req)
+
     def receipt(self, req):
         if req.get('op') == 'grants' and not req.get('revoke'):
             return self.xfer._list(req)
@@ -373,7 +523,7 @@ class Broker:
         if receipt and receipt[0] > time.monotonic():
             return receipt[1]
         matching = [row for row in self.calls.values() if row.get('admitted') and key(row['request']) == key(req)]
-        rows = [row for row in matching if row['check']()]
+        rows = [row for row in matching if row['check']() and (row.get('start_ready') is None or row['start_ready'].is_set())]
         if len(rows) != 1:
             if req.get('t') == 'file_show':
                 execution = getattr(self.xfer, 'execution', None)

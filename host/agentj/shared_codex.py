@@ -1098,6 +1098,10 @@ class SharedCodexAgent(CodexAgent):
                        effort=self.thread.get('reasoningEffort'))
             self.turn_id=(res.get('turn') or {}).get('id')
             await self.await_turn()     # P282: turn/completed, or the quiet-tail fallback
+            # Complete brokered work while the native actor still owns this turn.
+            peers = getattr(self.host, 'peers', None)
+            if peers is not None:
+                await peers.xfer.broker.drain()
             self.read_desktop()
             # P282 (Mac 10-14: 46–65 s per spawn + resume on a busy machine): a phone message already waiting keeps this
             # app-server and its loaded thread for the very next turn; released after KEEP_WAIT s in any case.

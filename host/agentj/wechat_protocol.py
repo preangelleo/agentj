@@ -162,12 +162,14 @@ class Media:
             raise Failure('local_media_limit_25MiB')
         return plain
 
-    def upload(self, user, item, plain, *, retry=True):
+    def upload(self, user, item, plain, *, retry=True, valid=None):
         if len(plain) > MAX_MEDIA:
             raise Failure('local_media_limit_25MiB')
         typ = item['type']
         key, filekey = secrets.token_bytes(16), secrets.token_hex(16)
         cipher = encrypt(plain, key)
+        if valid is not None and not valid():
+            raise Failure('file_binding_changed')
         upload = self.api.call('getuploadurl', {'filekey': filekey, 'media_type': {2: 1, 4: 3, 5: 2}[typ],
                               'to_user_id': user, 'rawsize': len(plain), 'rawfilemd5': hashlib.md5(plain).hexdigest(),
                               'filesize': len(cipher), 'no_need_thumb': True, 'aeskey': key.hex()})
@@ -178,6 +180,8 @@ class Media:
             url = CDN + '/upload?' + urllib.parse.urlencode({'encrypted_query_param': upload['upload_param'], 'filekey': filekey})
         attempts = 3 if retry else 1
         for attempt in range(attempts):
+            if valid is not None and not valid():
+                raise Failure('file_binding_changed')
             try:
                 status, headers, _ = self.api.transport.request('POST', url, {'Content-Type': 'application/octet-stream'}, cipher, 60)
                 param = headers.get('x-encrypted-param')

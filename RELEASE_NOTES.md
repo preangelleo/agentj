@@ -1,5 +1,5 @@
-# Agent J v0.30.78
+# Agent J v0.30.79
 
-/compact from the phone no longer hangs, and an unresponsive main session reports an error. Clear the queue or remove one waiting message.
+Fixes failed file sends from a paired remote. Ask for a file in your linked WeChat chat. Updates clear old downloads they no longer need.
 
-手机发 /compact 不再卡死，主会话没反应时会报错并给出「重启 Agent」。排队消息可以清空或单条删除。登录卡、深浅色文字和自动升级补跑也有改进。
+修复遥控器回合里偶尔发不出文件或图片的问题。绑定微信可以直接要文件。升级后会清理用不到的旧下载。

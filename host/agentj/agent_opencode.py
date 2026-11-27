@@ -1442,9 +1442,9 @@ class OpenCodeAgent(Agent):
                     and part.get("type") == "tool" and state.get("status") in ("completed", "error"):
                 from . import trust_taint             # S2/S3: the served session's (and its sub-agents') finished tool part
                 trust_taint.observe_tool(self, part.get("tool"), state.get("input"))
-            if part.get("sessionID") == self.sid and part.get("type") == "tool" and state.get("status") in ("completed", "error") and getattr(self.host, "peers", None) is not None:
-                self.host.peers.xfer.broker.complete(part.get("callID"), state.get("status") == "completed", state.get("output"))
             self._tool_dir(p.get("part"))
+            if self.sid is not None and part.get("sessionID") == self.sid and part.get("type") == "tool":
+                self._owner_tool_part(part, state)
             self._text_part(p.get("part"))
             self._use_part(p.get("part"))
         elif t == "message.updated":
@@ -1657,6 +1657,85 @@ class OpenCodeAgent(Agent):
                 dirs.pop(next(iter(dirs)))
             dirs[part["callID"]] = wd if os.path.isabs(wd) else os.path.join(self.cfg.get("dir") or "/", wd)
 
+    def _owner_shell_broker(self):
+        host = getattr(self, "host", None)
+        peers = getattr(host, "peers", None)
+        if (peers is not None and getattr(host, "agent", None) is self
+                and not self.cfg.get("_workflow_ceo") and not self.research):
+            return peers.xfer.broker
+
+    def _owner_shell_call(self, sid, message, call, inp, *, observe=False):
+        """Canonical input from a local native shell event, bound to the current execution."""
+        if (sid != self.sid or not all(isinstance(x, str) and 0 < len(x) <= 512 for x in (sid, message, call))
+                or not isinstance(inp, dict) or not isinstance(inp.get("command"), str)):
+            return None
+        wd = inp.get("workdir")
+        if wd is not None and not isinstance(wd, str):
+            return None
+        cwd = os.path.abspath(os.path.join(self.cfg["dir"], wd or ""))
+        raw = {"command": inp["command"]}
+        from .owner_broker import parse
+        req = parse("Bash", raw, cwd)
+        if not req or req["t"] != "file_show":
+            return None
+        if isinstance(inp.get("description"), str):
+            raw["description"] = inp["description"]
+        from .approval_jev import with_cwd
+        policy = {**raw, "command": with_cwd(raw["command"], cwd, self.cfg["dir"])}
+        encoded = json.dumps([sid, message, call], separators=(",", ":"))
+        native, shell = (sid, message), (raw["command"], cwd)
+        broker = self._owner_shell_broker()
+        if observe and broker is not None:
+            owner = self._sync_owner()
+            send, turn = getattr(self, "cur_send", None), owner[-1]
+            proc = owner[0]
+            if (send is not None and turn is not None and not turn.is_set()
+                    and proc is not None and proc.returncode is None):
+                def live():
+                    return (self._sync_current(owner) and self.host.agent is self and self.cur_send is send
+                            and proc.returncode is None)
+
+                row = broker.register(encoded, "Bash", policy, cwd, raw=raw, native=native,
+                                      prehook=True, native_shell=shell, native_live=live)
+                if row is not None:
+                    self._bg(broker.execute("Bash", policy, encoded))
+        return encoded, policy, raw, native, shell
+
+    def _owner_tool_part(self, part, state):
+        broker = self._owner_shell_broker()
+        if broker is None:
+            return
+        status = state.get("status")
+        call = part.get("callID")
+        if part.get("tool") == "bash" and self._own_protocol():
+            start = (state.get("time") or {}).get("start")
+            if isinstance(start, (int, float)) and start >= self.turn_t0:
+                normalized = self._owner_shell_call(self.sid, part.get("messageID"), call, state.get("input"),
+                                                    observe=status == "running")
+                if normalized and status in ("completed", "error"):
+                    cid, _, _, native, shell = normalized
+                    exit_code = (state.get("metadata") or {}).get("exit")
+                    broker.complete(cid, status == "completed" and type(exit_code) is int and exit_code == 0,
+                                    state.get("output"), native=native, native_shell=shell)
+        if status in ("completed", "error"):
+            # v1 approval-only calls (including shared sessions and existing secret operations).
+            broker.complete(call, status == "completed", state.get("output"))
+
+    def _owner_permission_shell(self, req, sid):
+        tool = req.get("tool")
+        if (sid != self.sid or not self._own_protocol() or req.get("permission") != "bash"
+                or not isinstance(tool, dict)):
+            return None
+        call, message = tool.get("callID"), tool.get("messageID")
+        if not isinstance(call, str) or not isinstance(message, str):
+            return None
+        # v1 metadata records the literal command that the native permission request covers.
+        md = req.get("metadata")
+        if not isinstance(md, dict):
+            return None
+        wd = getattr(self, "tool_dirs", {}).get(call)
+        return self._owner_shell_call(sid, message, call, {**md, "workdir": wd})
+
     async def _decide(self, rid: str, req: dict, gone: asyncio.Future) -> None:
         reply, msg = "reject", "已拒绝。"
         sid = getattr(self, "perm_sid", {}).pop(rid, None)
@@ -1675,7 +1754,14 @@ class OpenCodeAgent(Agent):
             with self._src_ctx(sid):       # S3: a sub-agent / OpenCode's own wake turn is judged by its source
                 broker = self.host.peers.xfer.broker if getattr(self.host, "peers", None) is not None and sid == self.sid and not self.cfg.get("_workflow_ceo") else None
                 if broker:
-                    broker.register(call, name, inp, wd or self.cfg["dir"], raw=secret_raw)
+                    native_shell = self._owner_permission_shell(req, sid)
+                    if native_shell:
+                        call, inp, secret_raw, native, shell = native_shell
+                        broker.register(call, name, inp, shell[1], raw=secret_raw, native=native, native_shell=shell)
+                    elif not self.v2:
+                        broker.register(call, name, inp, wd or self.cfg["dir"], raw=secret_raw)
+                    else:
+                        broker = None  # v2 resource summaries are insufficient native call evidence.
                 ans = await broker.execute(name, inp, call, gone) if broker else None
                 ans = ans if ans is not None else ({"behavior": "allow"} if low_risk_pass(self.host, self.cfg, name, inp)
                        else await self.host.ask(name, inp, gone, _harness_permission=True, **({"origin": o} if o else {}),

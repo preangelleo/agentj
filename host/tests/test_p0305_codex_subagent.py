@@ -234,6 +234,7 @@ class KeepForChildren(unittest.IsolatedAsyncioTestCase):
             self.addCleanup(p.stop)
         self.board = busy.Board(Path(self.tmp.name))
         host = Mock(busy=self.board)
+        host.peers.xfer.broker.drain = AsyncMock(return_value=None)
         host.st.agent_session.return_value = None
         a = SharedCodexAgent(host, {"kind": "codex", "dir": self.tmp.name, "_workflow_ceo": True, "shared_session_id": TID})
         self.p = SimpleNamespace(returncode=None, pid=4242)

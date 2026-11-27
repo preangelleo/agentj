@@ -47,7 +47,8 @@ def add_parser(sub):
     show.set_defaults(fn=cli)
     send = actions.add_parser('send', help='发送单个文件到自己已绑定的微信 / Send one file to your bound WeChat',
         description='Requires an exact admitted live owner turn. queued is pending; later FILE_SEND_RESULT reports platform acceptance, not delivery.')
-    send.add_argument('path')
+    send.add_argument('path', help='文件须在本轮工作目录内；在目录外的 ~/.codex/generated_images 图片须先复制进去 / '
+                                   'File must be inside the admitted work folder. Copy images from ~/.codex/generated_images there first if needed.')
     send.add_argument('--to', required=True, choices=['wechat'])
     send.add_argument('--json', action='store_true')
     send.set_defaults(fn=cli, label='', delivery='wechat')
@@ -58,7 +59,8 @@ HINT = '请在当前主人回合让 Agent 单独运行 `agentj file show PATH --
 OWNER_HINT = '请用已配对的遥控器在这个会话重新发消息，让 Agent 附上文件。'
 
 FAILURE_HINTS = {
-    'native_admission_missing': HINT,
+    'native_admission_missing': HINT + ' 要附到网页，请从已配对的遥控器提出请求。微信来的文件请求只能发回同一个绑定微信。'
+                                       ' To attach to the Web App, ask from a paired remote. A file requested from WeChat can only go back to that same bound WeChat chat.',
     'no_owner_session': OWNER_HINT,
     'native_admission_expired': OWNER_HINT,
     'native_admission_ambiguous': '请用已配对的遥控器重新发消息，让 Agent 一次只附一个文件。',
@@ -67,21 +69,58 @@ FAILURE_HINTS = {
 }
 
 
-SEND_HINT = ('Run `agentj file send PATH --to wechat --json` as the whole Bash command. '
-             'queued is pending; wait for FILE_SEND_RESULT; do not retry uncertain delivery. '
-             '整条 Bash 命令只写发送命令；queued 只是排队，等 FILE_SEND_RESULT，不自动重试未知结果。')
+SEND_HINT = ('Ask from a paired remote or in a new message from your bound WeChat chat. Group, quoted and forwarded messages cannot request a file. '
+             'Run `agentj file send PATH --to wechat --json` alone in the session’s work folder. queued is pending; wait for FILE_SEND_RESULT. '
+             'Do not retry uncertain delivery. '
+             '请从已配对的遥控器或在绑定微信私聊中亲自发一条新消息。群聊、引用和转发消息不能要文件。'
+             '文件须在本轮工作目录内。单独运行发送命令，看到 queued 后等 FILE_SEND_RESULT。未确认送出时请勿自动重试。')
 
 SEND_FAILURE_HINTS = {
     'native_admission_missing': SEND_HINT,
-    'no_owner_session': '请从已配对的遥控器发起微信文件发送请求。',
-    'native_admission_expired': '本轮微信文件发送请求已失效，请从已配对的遥控器重新发起。',
+    'no_owner_session': '请在已绑定的微信私聊中发一条新消息，或从已配对的遥控器提出发送请求。 / Send a new message from your bound WeChat chat or ask from a paired remote.',
+    'native_admission_expired': '这次文件发送请求已失效，请从已绑定的微信私聊或已配对的遥控器重新发起。 / This request expired. Ask again in your bound WeChat chat or from a paired remote.',
     'native_admission_cwd_mismatch': '请让 Agent 在当前会话的工作目录单独运行微信文件发送命令。',
     'native_admission_request_mismatch': '请核对这次微信文件发送命令里的路径与获准命令是否一致。',
+    'binding_changed': '原来的微信连接或消息已失效。请确认微信已绑定，再在私聊中发一条新消息。 / The original WeChat binding or message is no longer active. Check the binding, then send a new private message.',
+    'needs_message': '微信没有接受这次发送。请在已绑定的微信私聊中发一条新消息。 / WeChat declined the send. Send a new message in your bound private chat.',
 }
+
+WECHAT_FILE_HINTS = {
+    'wechat_page_forbidden': ('从微信提出的文件请求只能发回同一个绑定微信。要把文件附到网页，请从已配对的遥控器重新提出。 '
+                              '/ A file requested from WeChat can only go back to that same bound WeChat chat. To attach it to the Web App, ask from a paired remote.'),
+    'wechat_origin_invalid': ('请在已绑定的微信私聊中亲自发一条新消息来要文件。群聊、引用和转发消息不能用于这项操作。 '
+                              '/ Ask for the file in a new message in your bound WeChat chat. Group, quoted and forwarded messages cannot request this operation.'),
+}
+
+
+def source_refusal(host, req, source, send, binding):
+    if provenance.is_owner(source):
+        return None
+    if provenance.owner_channel(source) != 'wechat':
+        return 'owner_source_required'
+    if req.get('delivery') != 'wechat':
+        return 'wechat_page_forbidden'
+    if (not binding or not binding.get('inbound') or getattr(send, 'wechat_file_binding', None) is not binding
+            or provenance.owner_channel(send.source) != 'wechat'):
+        return 'wechat_origin_invalid'
+    from .wechat_forward import file_binding_live
+    return None if file_binding_live(host, binding) else 'binding_changed'
 
 
 def failure(why):
     return {'result': 'failure', 'why': why, 'client_downloaded': False}
+
+
+def generated_image_hint(host, root, path):
+    """Only the already checked owner turn gets a hint about its own generated images."""
+    if media._inside(path, root):
+        return None
+    image_root = host.media.generated_root()
+    if image_root and path != image_root and media._inside(path, image_root):
+        from .text import pick
+        return pick(host.lang, '图片在 Codex 的生成目录里。请先将图片复制到当前会话的工作目录，再对副本单独运行文件命令。',
+                    'The image is in the Codex output folder. First copy it into this session’s working directory, then run the file command on the copy.')
+    return None
 
 
 async def attach(host, req, check, admitted_root=None, delivery_binding=None):
@@ -104,8 +143,8 @@ async def attach(host, req, check, admitted_root=None, delivery_binding=None):
             return 'project_changed'
         if send is None or host.agent.cur_send is not send:
             return 'no_owner_session'
-        if not provenance.is_owner(send.source):
-            return 'owner_source_required'
+        if why := source_refusal(host, req, send.source, send, delivery_binding):
+            return why
         if (page is None or host.hist.get(tid) is not page or page.get('end') != 'open'
                 or host.cur_turn != tid or send.turn not in ids):
             return 'owner_page_inactive'
@@ -132,7 +171,10 @@ async def attach(host, req, check, admitted_root=None, delivery_binding=None):
         rec, why = await asyncio.to_thread(prepare)
     except Exception:
         rec, why = None, 'failed'
-    if refusal():
+    if why_now := refusal():
+        if delivery_binding and delivery_binding.get('inbound'):
+            why_now = source_refusal(host, req, send.source, send, delivery_binding) or 'native_admission_expired'
+            return failure(why_now)
         return failure('expired')
     if why:
         return failure(why)

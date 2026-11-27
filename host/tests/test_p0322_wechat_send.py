@@ -23,7 +23,9 @@ class Send(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         await file_fixture.NativeFlows.asyncSetUp(self)
         self.received, self.uploads, self.requests, self.key = [], [], [], None
+        self.on_upload_url = None
         self.on_upload = None
+        self.on_send = None
         self.fail_send = False
         self.fail_upload = False
         test = self
@@ -35,6 +37,8 @@ class Send(unittest.IsolatedAsyncioTestCase):
                     body = json.loads(data)
                     test.key = bytes.fromhex(body['aeskey'])
                     test.target = body['to_user_id']
+                    if test.on_upload_url:
+                        test.on_upload_url()
                     result = {'upload_full_url': protocol.CDN+'/upload'}
                 elif self.path.endswith('/upload'):
                     test.uploads.append(protocol.decrypt(data, test.key))
@@ -48,6 +52,8 @@ class Send(unittest.IsolatedAsyncioTestCase):
                     return
                 elif self.path.endswith('sendmessage'):
                     test.received.append(json.loads(data)['msg'])
+                    if test.on_send:
+                        test.on_send()
                     if test.fail_send:
                         self.send_response(500); self.end_headers(); return
                     result = {}
@@ -130,6 +136,80 @@ class Send(unittest.IsolatedAsyncioTestCase):
         item = self.received[0]['item_list'][0]
         self.assertEqual(item['type'], 4)
         self.assertEqual(item['file_item']['file_name'], doc.name)
+
+    async def receive_owner(self, **fields):
+        from unittest.mock import AsyncMock
+        msg = {'message_type': 1, 'from_user_id': ACCOUNT['ilink_user_id'], 'message_id': 47,
+               'context_token': 'incoming-context', 'item_list': [{'type': 1, 'text_item': {'text': 'Send my file back'}}],
+               **fields}
+
+        def accept(session, *_args, **_kwargs):
+            self.send.source = session.provenance
+            self.send.wechat_file_binding = getattr(session, 'wechat_file_binding', None)
+            return self.send
+
+        with patch.object(self.host, '_accept', new=AsyncMock(side_effect=accept)):
+            await self.wc.receive(self.wc.api_factory(ACCOUNT), msg, self.wc.store.data['generation'])
+
+    async def test_wechat_origin_uses_bound_incoming_context(self):
+        await self.receive_owner()
+        result = await self.deliver_file(self.image)
+        self.assertEqual(result['result'], 'sent_to_wechat')
+        self.assertEqual(self.uploads, [self.image.read_bytes()])
+        self.assertEqual(self.target, ACCOUNT['ilink_user_id'])
+        self.assertEqual(self.received[0]['to_user_id'], ACCOUNT['ilink_user_id'])
+        self.assertEqual(self.received[0]['context_token'], 'incoming-context')
+        self.assertFalse(self.page.get('media'))
+
+    async def test_wechat_origin_cannot_attach_to_page(self):
+        await self.receive_owner()
+        inp = {'command': f'agentj file show {self.image} --json'}
+        broker = self.host.peers.xfer.broker
+        broker.register('show-only', 'Bash', inp, str(self.work), native=('session', 'turn'))
+        answer = await broker.execute('Bash', inp, 'show-only')
+        self.assertEqual(answer['behavior'], 'deny')
+        self.assertIn('同一个绑定微信', answer['message'])
+        self.assertFalse(self.page.get('media'))
+
+    async def test_reference_item_has_no_file_admission(self):
+        await self.receive_owner(item_list=[{'type': 1, 'text_item': {'text': 'Send my file back'},
+                                            'ref_msg': {'svr_id': 'fixture-original'}}])
+        answer, _broker, _native, _inp = await self.admit_file(self.image)
+        self.assertEqual(answer['behavior'], 'deny')
+        self.assertIn('转发', answer['message'])
+        self.assertEqual(self.requests, [])
+
+    async def test_wechat_origin_binding_cannot_be_refreshed_at_admission(self):
+        await self.receive_owner()
+        self.wc.store.data.update(account={**ACCOUNT, 'ilink_user_id': 'other-owner'}, generation='new-generation',
+                                  context='another-context')
+        answer, _broker, _native, _inp = await self.admit_file(self.image)
+        self.assertEqual(answer['behavior'], 'deny')
+        self.assertEqual(self.requests, [])
+
+    async def test_wechat_source_marker_alone_cannot_use_current_binding(self):
+        self.send.source = provenance.wechat_owner()
+        answer, _broker, _native, _inp = await self.admit_file(self.image)
+        self.assertEqual(answer['behavior'], 'deny')
+        self.assertEqual(self.requests, [])
+
+    async def test_wechat_origin_context_changes_before_cdn_upload(self):
+        await self.receive_owner()
+        self.on_upload_url = lambda: self.wc.store.data.update(context='replacement-context')
+        result = await self.deliver_file(self.image)
+        self.assertEqual(result['why'], 'binding_changed')
+        self.assertIn('发一条新消息', result['hint'])
+        self.assertFalse(result.get('delivery_unknown', False))
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.received, [])
+
+    async def test_wechat_origin_old_response_cannot_clear_replacement_context_error(self):
+        await self.receive_owner()
+        self.on_send = lambda: self.wc.store.data.update(context='replacement-context', context_stale=True)
+        result = await self.deliver_file(self.image)
+        self.assertEqual(result['result'], 'sent_to_wechat')
+        self.assertEqual(self.received[0]['context_token'], 'incoming-context')
+        self.assertTrue(self.wc.store.data['context_stale'])
 
     async def test_binding_changes_during_upload_never_send_to_new_account(self):
         def change():

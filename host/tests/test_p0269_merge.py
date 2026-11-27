@@ -45,6 +45,7 @@ class DaemonActiveDesktopTurn(unittest.IsolatedAsyncioTestCase):
         env.start()
         self.addCleanup(env.stop)
         self.host = Mock()
+        self.host.peers.xfer.broker.drain = AsyncMock(return_value=None)
         self.host.st.agent_session.return_value = SID
         self.host.lang, self.host.preferences, self.host.asks = 'zh', None, {}
         self.host.stopped.return_value = False

@@ -26,6 +26,23 @@ class DictionaryCodec(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'pronunciation prefix'):
                 self.decode(frame(sounds=sounds, magic=b'AJP2'))
 
+    def test_marked_prefix_records_preserve_rows_and_refuse_ambiguous_data(self):
+        words, sounds = b'\x80A\x81B', b'\x81\x01\x82\x02'
+        self.assertEqual(self.decode(frame(words, sounds, magic=b'AJP3')), b'A AA\nAB AA B\n')
+        self.assertEqual(self.decode(frame(words, b'\x81\x01\x82', magic=b'AJP3')), b'A AA\nAB AA\n')
+        invalid = [
+            frame(b'A' + words, sounds, magic=b'AJP3'),
+            frame(words, b'\x01' + sounds, magic=b'AJP3'),
+            frame(words, sounds + b'\x81', magic=b'AJP3'),
+            frame(words, b'\x81\0\x82\x02', magic=b'AJP3'),
+            frame(words, b'\x81\x01\x83\x02', magic=b'AJP3'),
+            frame(words, sounds, nphones=128, magic=b'AJP3'),
+        ]
+        for raw in invalid:
+            with self.subTest(raw=raw):
+                with self.assertRaises(ValueError):
+                    self.decode(raw)
+
     def test_original_hash_and_all_rows_are_unchanged(self):
         raw = wake.dictionary_bytes()
         self.assertEqual(len(raw), 3330061)

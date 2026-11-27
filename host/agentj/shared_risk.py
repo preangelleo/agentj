@@ -17,6 +17,7 @@ def credential_read_refusal(host, tool, inp, cwd):
     return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
             'permissionDecisionReason': uv_list.CREDENTIAL_READ_REASON + ': ' + uv_list.CREDENTIAL_READ_HINT}}
 
+
 # P539 (#301): the deny reason the agent sees says what happened and what it can do next (never a bare "denied").
 WHY = {
     'unknown': ('Agent J 的规则里没有这种动作，没有给主人弹确认卡就直接拒绝了（不是主人拒绝的）。换一种常见做法再试，或用一句话告诉主人你想做什么、请他在手机上确认。',
@@ -150,6 +151,10 @@ class RiskGuard:
         if dispatch_output.get('permissionDecision') == 'deny':
             return dispatch
         if await self.check(tool,inp):
+            if a.kind == 'codex':
+                from .owner_broker import codex_prehook
+                if file_refusal := await codex_prehook(a, event, tool, inp):
+                    return file_refusal
             return dispatch  # no allow: preserve every native hook/permission decision
         return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny',
                                      'permissionDecisionReason':self.reason(),
@@ -168,7 +173,9 @@ class NativePathGuard:
 
     @property
     def session(self):
-        return {'pid': getattr(getattr(self.adapter, 'proc', None), 'pid', None)}
+        adapter = self.adapter
+        return {'pid': getattr(getattr(adapter, 'proc', None), 'pid', None),
+                'sessionId': getattr(adapter, 'tid' if adapter.kind == 'codex' else 'sid', None)}
 
     def authentic(self, event):
         pid = self.session['pid']
@@ -216,6 +223,9 @@ class NativePathGuard:
                               reason=delete_redirect.REASON, card=False)
                 return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
                                                'permissionDecisionReason': text}}
+            if a.kind == 'codex':
+                from .owner_broker import codex_prehook
+                return await codex_prehook(a, event, tool, inp)
             return {}
         sid = getattr(a, 'tid', None) if a.kind == 'codex' else getattr(a, 'sid', None)
         same_cwd = isinstance(event.get('cwd'), str) and os.path.realpath(event['cwd']) == os.path.realpath(a.cfg['dir'])

@@ -5,7 +5,7 @@ import re
 import time
 from . import privacy
 from .silent import is_silent, strip_markers
-from .wechat_protocol import Media
+from .wechat_protocol import KINDS, Media
 
 _FENCE = re.compile(r'^\s*(```|~~~)')
 _RULE = re.compile(r'^\s*([-*_])(\s*\1){2,}\s*$')
@@ -215,11 +215,38 @@ def file_binding(host):
             'generation': wc.store.data['generation'], 'context': wc.store.data['context']}
 
 
+_FORWARDED = frozenset(('ref_msg', 'forward', 'forwarded', 'is_forwarded', 'forward_info',
+                        'forward_from', 'forwarded_from', 'forward_origin'))
+
+
+def inbound_file_binding(wc, msg, generation, items):
+    """After sender authentication, attest only an original inbound request with its own reply context."""
+    d = wc.store.data
+    context = msg.get('context_token')
+    if (not isinstance(context, str) or not context.strip() or _FORWARDED.intersection(msg)
+            or msg.get('to_user_id') not in (None, '', d['account'].get('ilink_bot_id'))):
+        return None
+    body = False
+    for item in items:
+        if not isinstance(item, dict) or type(item.get('type')) is not int or item['type'] not in KINDS:
+            return None
+        detail = item.get(KINDS[item['type']][0] + '_item')
+        if not isinstance(detail, dict) or _FORWARDED.intersection(item) or _FORWARDED.intersection(detail):
+            return None
+        if item['type'] in (1, 3) and isinstance(detail.get('text'), str) and detail['text'].strip():
+            body = True
+    if body:
+        return {'adapter': wc, 'account': dict(d['account']), 'generation': generation,
+                'context': context, 'inbound': True}
+    return None
+
+
 def file_binding_live(host, binding):
     if not isinstance(binding, dict):
         return False
     wc = binding.get('adapter')
     return bool(wc is not None and getattr(host, 'wechat', None) is wc and not _why(wc)
+                and (not binding.get('inbound') or not (wc.store.data.get('binding_error') or wc.store.data.get('context_stale')))
                 and wc.store.data['account'] == binding['account']
                 and wc.store.data['generation'] == binding['generation']
                 and wc.store.data['context'] == binding['context'])
@@ -265,17 +292,24 @@ async def send_file(host, item, binding, *, valid):
             return file_show.failure('binding_changed')
         api = wc.api_factory(binding['account'])
         spec = {'type': 2} if rec['mime'] in _IMAGES else {'type': 4, 'file_item': {'file_name': rec['name']}}
-        outgoing = await asyncio.to_thread(Media(api).upload, binding['account']['ilink_user_id'], spec, data, retry=False)
+        guard = {'valid': live} if binding.get('inbound') else {}
+        outgoing = await asyncio.to_thread(Media(api).upload, binding['account']['ilink_user_id'], spec, data, retry=False, **guard)
         await asyncio.to_thread(file_secret_check, rec['root'], os.path.join(rec['root'], *rec['parts']), data, rec['mime'])
         if not live():
             return file_show.failure('binding_changed')
         attempted = True
-        await wc.send(api, '', binding['generation'], item=outgoing)
+        if binding.get('inbound'):
+            await wc.send(api, '', binding['generation'], item=outgoing, file_binding=binding, valid=live)
+        else:
+            await wc.send(api, '', binding['generation'], item=outgoing)
         return {'result': 'sent_to_wechat', 'platform_accepted': True, 'client_downloaded': False,
                 'files': 1, 'mime': rec['mime'], 'bytes': rec['bytes']}
     except (OSError, ValueError) as exc:
         why = str(exc) if str(exc) in ('secret', 'privacy_unavailable') else 'send_failed'
     except Exception as exc:
-        why = 'needs_message' if getattr(exc, 'code', None) in ('context_rejected', 'no_context') else 'send_failed'
+        code = getattr(exc, 'code', None)
+        if code == 'file_binding_changed':
+            return file_show.failure('binding_changed')
+        why = 'needs_message' if code in ('context_rejected', 'no_context') else 'send_failed'
     wc.store.count('send_failed')
     return {**file_show.failure(why), 'delivery_unknown': attempted}

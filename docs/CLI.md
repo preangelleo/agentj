@@ -3216,7 +3216,7 @@ usage: agentj file send [-h] --to {wechat} [--json] path
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `path` | `null` | true | — | `` |
+| `path` | `null` | true | — | `File must be inside the admitted work folder. Copy images from ~/.codex/generated_images there first if needed.` |
 | `--to` | `null` | true | `wechat` | `` |
 | `--json` | `false` | false | — | `` |
 
@@ -11653,7 +11653,7 @@ usage: agentj file send [-h] --to {wechat} [--json] path
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `path` | `null` | true | — | `` |
+| `path` | `null` | true | — | `文件须在本轮工作目录内；在目录外的 ~/.codex/generated_images 图片须先复制进去` |
 | `--to` | `null` | true | `wechat` | `` |
 | `--json` | `false` | false | — | `` |
 

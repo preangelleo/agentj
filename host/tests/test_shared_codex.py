@@ -50,7 +50,12 @@ class AlternatingActors(unittest.IsolatedAsyncioTestCase):
   async def deliver(fn):
    a.turn_done.set();return {'turn':{'id':'test'}}
   a.deliver=AsyncMock(side_effect=deliver)
+  async def drain():
+   a._kill.assert_not_awaited()
+   self.assertIs(a.turn_proc, owned)
+  host.peers.xfer.broker.drain=AsyncMock(side_effect=drain)
   await a.turn('phone');a._kill.assert_awaited_once_with(owned)
+  host.peers.xfer.broker.drain.assert_awaited_once()
   self.assertFalse(a.phone_turn);a.read_desktop.assert_called_once()
 
 class HookTrust(unittest.IsolatedAsyncioTestCase):

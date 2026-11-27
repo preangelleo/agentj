@@ -8505,6 +8505,8 @@ class Host:
             return None
         send.approval_origin = approval_review.remember(self, turn, getattr(s, "provenance", None))
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
+        if provenance.owner_channel(send.source) == 'wechat':
+            send.wechat_file_binding = getattr(s, 'wechat_file_binding', None)
         if self.peers is not None:
             await asyncio.to_thread(self.peers.xfer.admit, send, text, quote)
             if held_guard is not None and not held_guard():

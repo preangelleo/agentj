@@ -21,6 +21,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
         self.home=Path(self.tmp.name)/'codex';self.proj=Path(self.tmp.name)/'proj';self.proj.mkdir()
         env=patch.dict(os.environ,{'CODEX_HOME':str(self.home)});env.start();self.addCleanup(env.stop)
         self.host=Mock();self.host.st.agent_session.return_value=None
+        self.host.peers.xfer.broker.drain = AsyncMock(return_value=None)
         self.calls=[]
 
     def rollout(self,sid,cwd=None,ctx=None,active=False,name=None):

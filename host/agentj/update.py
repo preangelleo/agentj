@@ -1347,6 +1347,9 @@ def authorized_apply(st, code: str | None, target: str | None, **kw) -> dict:
         return market_result()
     from . import upgrade_diag
     res = owner_check(_authorized_apply(st, code, target, **kw), kw.get("prefix"))
+    if res.get("reason") == "upgraded" and res.get("service") == "not_installed" and kw.get("plan_fn") is None:
+        from .auto_update import prune_upgrade_downloads
+        prune_upgrade_downloads(st, res["to"], res["from"])
     upgrade_diag.remember(st, res)
     return res
 
@@ -1550,6 +1553,10 @@ def apply(st, target=None, *, fenced=None, **kw):
         from . import fence
         fenced = fence.inside()
     res = owner_check(_apply(st, target, fenced=fenced, **kw), kw.get("prefix"))
+    if (not fenced and res.get("reason") == "upgraded" and res.get("service") == "not_installed"
+            and kw.get("plan_fn") is None):
+        from .auto_update import prune_upgrade_downloads
+        prune_upgrade_downloads(st, res["to"], res["from"])
     upgrade_diag.remember(st, res, fenced=fenced)
     return res
 

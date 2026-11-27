@@ -143,7 +143,7 @@ Agent 回复里的内容会自动排好版：
 
 `PATH` 支持绝对路径和 `~/`，文件仍须位于本轮获准的工作目录内。失败说明：`broker_unavailable` 表示无法连接本机附图服务；`no_owner_session` 表示无法确认当前主人回合或其上下文；`native_admission_missing` 表示 AI 工具尚未准入这条具体请求；`native_admission_expired` 表示准入已失效；`native_admission_ambiguous` 表示匹配到多条有效准入。这些失败都没有附上文件。当前回合有效时，让 Agent 单独运行这条命令；回合已失效或无法确认时，请用已配对的遥控器在同一会话重新发消息。
 
-在当前获准的主人手机回合里，要把单个本机图片或文件主动发到自己已绑定的微信，让 Agent 整条 Bash 命令只运行 `agentj file send PATH --to wechat --json`。不能指定群、好友、收件人、账号或 URL。文件须在本轮工作目录里，通过原有类型、无软链接、摘要和秘密检查。微信单件上限 25 MiB，原有媒体类型上限可能更低；每条命令只发一件，不是一次发 24 件的接口。现有页面附件仍受 24 件、合计 100 MiB 上限限制。`queued` 只是等原生工具完成；等 `FILE_SEND_RESULT`：`sent_to_wechat` 且 `platform_accepted:true` 表示平台接受，不表示手机已看到或下载。`failure` 可能意味着送达状态未知，明确重试前先查看微信。绑定、上下文或主人回合变动就停止发送；不能借此绕过 `file show` 失败、审批或文件检查。
+从自己绑定的微信私聊直接发出请求，文件只发回发起请求的同一个微信。群聊、转发消息和访客的文件请求会被拒绝。您也可以从已配对的遥控器请 Agent 把文件发到自己绑定的微信。要附到网页，请用已配对的遥控器发起请求。让 Agent 单独运行 `agentj file send PATH --to wechat --json`。这条命令只发到绑定的微信，不能指定收件人、账号或 URL。文件须在本轮工作目录里，通过原有类型、无软链接、摘要和秘密检查。如果 Codex 把图片生成在工作目录外的 `~/.codex/generated_images`，先把图片复制到工作目录，再另起一条命令发送副本。微信单件上限 25 MiB，原有媒体类型上限可能更低；每条命令只发一件，不是一次发 24 件的接口。现有页面附件仍受 24 件、合计 100 MiB 上限限制。`queued` 只是等原生工具完成；等 `FILE_SEND_RESULT`：`sent_to_wechat` 且 `platform_accepted:true` 表示平台接受，不表示手机已看到或下载。`failure` 可能意味着送达状态未知，明确重试前先查看微信。绑定、上下文或主人回合变动就停止发送；不能借此绕过 `file show` 失败、审批或文件检查。
 
 （截图：回复里的图片、公式和高亮的代码 — https://agentj.app/docs/manual/rich.zh.webp）
 （截图：往下翻：流程图、可以下载的文件，和一行没有发出的说明 — https://agentj.app/docs/manual/rich-more.zh.webp）

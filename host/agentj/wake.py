@@ -9,11 +9,27 @@ import lzma
 import struct
 from .preferences import DATA, ConfigError
 
-# AJP2 also front-codes each pronunciation against its predecessor.
+# AJP2 adds pronunciation prefixes. AJP3 marks record starts with the high bit.
 DICTIONARY_FRAME_MAX = 4 * 1024 * 1024
 DICTIONARY_RAW_MAX = 4 * 1024 * 1024
 _DICTIONARY_HEADER = struct.Struct('>4sIIB')
+_PACKED_RECORD = re.compile(rb'[\x80-\xff]')
 _DICTIONARY_SHA = 'f7000ec3a90544c0c7c16090d8951779c2b322e14dad5006290f498567d439ea'
+
+
+def _dictionary_record(stream, start, packed):
+    if start >= len(stream):
+        raise ValueError('truncated dictionary record')
+    if packed:
+        if stream[start] < 128:
+            raise ValueError('missing dictionary record marker')
+        next_record = _PACKED_RECORD.search(stream, start + 1)
+        end = next_record.start() if next_record else len(stream)
+        return bytes([stream[start] & 127]) + stream[start + 1:end], end
+    end = stream.find(b'\0', start + 1)
+    if end < 0:
+        raise ValueError('unterminated dictionary record')
+    return stream[start:end], end + 1
 
 
 def decode_dictionary(blob):
@@ -30,7 +46,8 @@ def decode_dictionary(blob):
     if len(frame) < _DICTIONARY_HEADER.size:
         raise ValueError('truncated dictionary header')
     magic, count, word_size, nphones = _DICTIONARY_HEADER.unpack_from(frame)
-    if magic not in (b'AJP1', b'AJP2') or not 0 < count <= 200000 or not 0 < nphones < 256:
+    packed = magic == b'AJP3'
+    if magic not in (b'AJP1', b'AJP2', b'AJP3') or not 0 < count <= 200000 or not 0 < nphones < (128 if packed else 256):
         raise ValueError('invalid dictionary header')
     position, table = _DICTIONARY_HEADER.size, []
     for _ in range(nphones):
@@ -46,37 +63,31 @@ def decode_dictionary(blob):
             raise ValueError('duplicate dictionary phoneme')
         table.append(phone)
         position = end + 1
-    if not 2 * count <= word_size <= len(frame) - position - 2 * count:
+    minimum = count if packed else 2 * count
+    if not minimum <= word_size <= len(frame) - position - minimum:
         raise ValueError('invalid dictionary word stream size')
     words, sounds = frame[position:position + word_size], frame[position + word_size:]
     wi = si = 0
     previous, previous_ids, output = b'', b'', bytearray()
-    sound_prefixes = magic == b'AJP2'
     for _ in range(count):
-        if wi >= len(words):
-            raise ValueError('truncated dictionary word')
-        prefix = words[wi]
-        wi += 1
-        end = words.find(b'\0', wi)
-        if prefix > len(previous) or end < 0:
+        word_record, wi = _dictionary_record(words, wi, packed)
+        prefix = word_record[0]
+        if prefix > len(previous):
             raise ValueError('invalid dictionary word prefix')
-        word = previous[:prefix] + words[wi:end]
+        word = previous[:prefix] + word_record[1:]
         if not 0 < len(word) < 256 or any(c <= 32 or c == 127 for c in word):
             raise ValueError('invalid dictionary word')
         try:
             word.decode('utf-8')
         except UnicodeDecodeError as error:
             raise ValueError('invalid dictionary word encoding') from error
-        wi = end + 1
-        end = sounds.find(b'\0', si)
-        ids = sounds[si:end] if end >= 0 else b''
-        if sound_prefixes:
-            if not ids or ids[0] - 1 > len(previous_ids):
+        ids, si = _dictionary_record(sounds, si, packed)
+        if magic != b'AJP1':
+            if not 1 <= ids[0] <= len(previous_ids) + 1:
                 raise ValueError('invalid dictionary pronunciation prefix')
             ids = previous_ids[:ids[0] - 1] + ids[1:]
         if not 0 < len(ids) <= 256 or any(not 0 < code <= nphones for code in ids):
             raise ValueError('invalid dictionary pronunciation')
-        si = end + 1
         output += word + b' ' + b' '.join(table[code - 1] for code in ids) + b'\n'
         if len(output) > DICTIONARY_RAW_MAX:
             raise ValueError('dictionary output limit exceeded')

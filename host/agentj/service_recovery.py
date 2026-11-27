@@ -298,7 +298,10 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
                     return 1
             raise
         (st.root / update.PENDING).unlink(missing_ok=True)
-        record(st, 'ok', target, verified_upgrade=(live == target and not os.environ.get(SIBLING_ENV)))
+        verified = live == target and not os.environ.get(SIBLING_ENV)
+        record(st, 'ok', target, verified_upgrade=verified)
+        if verified and pending:
+            auto_update.prune_upgrade_downloads(st, target, pending.get('from'))
         (st.root / NOTICE).unlink(missing_ok=True)
         restart_siblings(st, target)
         recovered = True

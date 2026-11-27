@@ -78,7 +78,9 @@ def to_v1_request(p: dict) -> dict:
     md = p.get("metadata") if isinstance(p.get("metadata"), dict) else {}
     sid = {"sessionID": p["sessionID"]} if isinstance(p.get("sessionID"), str) else {}
     if action == "shell":
-        return {"id": p.get("id"), "permission": "bash", "patterns": res, **sid,
+        source = p.get("source")
+        native = {"_native_tool": source} if isinstance(source, dict) and source.get("type") == "tool" else {}
+        return {"id": p.get("id"), "permission": "bash", "patterns": res, **sid, **native,
                 "metadata": {**md, "command": md.get("command") if isinstance(md.get("command"), str) else "\n".join(res)}}
     return {"id": p.get("id"), "permission": V2_TO_V1.get(action, action), "patterns": res, "metadata": md, **sid}
 
@@ -209,6 +211,55 @@ class OpenCodeV2Agent(OpenCodeAgent):
         self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
 
     # ------------------------------------------------ the event stream
+    def _owner_tool_event(self, event, p):
+        # v2 separates shell identity, arguments and its local completion into three events.
+        broker = self._owner_shell_broker()
+        turn = getattr(self, "turn_done", None)
+        created = event.get("created")
+        message, call = p.get("assistantMessageID"), p.get("id")
+        if (broker is None or turn is None or turn.is_set()
+                or type(created) not in (int, float) or created < self.turn_t0
+                or not all(isinstance(x, str) and 0 < len(x) <= 512 for x in (message, call))):
+            return
+        events = self.__dict__.setdefault("_owner_tool_events", {})
+        key = (self.sid, message, call)
+        kind = event["type"]
+        if kind == "session.tool.input.started" and p.get("name") == "shell":
+            if len(events) >= 64:
+                events.pop(next(iter(events)))
+            events.setdefault(key, (turn, None))
+        row = events.get(key)
+        if row is None or row[0] is not turn:
+            return
+        if kind == "session.tool.called" and row[1] is None and p.get("executed") is False:
+            events[key] = (turn, self._owner_shell_call(*key, p.get("input"), observe=True))
+        elif kind in ("session.tool.success", "session.tool.failed"):
+            events.pop(key)
+            if row[1] is not None:
+                cid, _, _, native, shell = row[1]
+                md = p.get("metadata")
+                exit_code = md.get("exit") if isinstance(md, dict) else None
+                output = p.get("content")
+                local_success = (kind == "session.tool.success" and p.get("executed") is False
+                                 and type(exit_code) is int and exit_code == 0)
+                text = [c.get("text") for c in output if isinstance(c, dict) and c.get("type") == "text"] if isinstance(output, list) else []
+                broker.complete(cid, local_success, text, native=native, native_shell=shell)
+
+    def _owner_permission_shell(self, req, sid):
+        source = req.get("_native_tool")
+        if sid != self.sid or req.get("permission") != "bash" or not isinstance(source, dict):
+            return None
+        message, call = source.get("messageID"), source.get("id")
+        if not isinstance(message, str) or not isinstance(call, str):
+            return None
+        row = getattr(self, "_owner_tool_events", {}).get((sid, message, call))
+        if row is None or row[0] is not self.turn_done or self.turn_done.is_set() or row[1] is None:
+            return None
+        cid, policy, raw, native, shell = row[1]
+        if req.get("patterns") != [shell[0]]:
+            return None
+        return cid, policy, raw, native, shell
+
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
         p = ev.get("data") if isinstance(ev.get("data"), dict) else {}
@@ -217,6 +268,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
         if (mine or kid) and isinstance(t, str) and t.startswith("session.tool."):
             from . import trust_taint      # S2/S3: the served session's (and its sub-agents') own tool step
             trust_taint.observe_tool(self, p.get("tool"), p.get("input"))
+            if mine:
+                self._owner_tool_event(ev, p)
         if mine:
             self.touch()                   # P219: progress on our session (stall watch)
         if mine and getattr(self, "collect", None) is None and not getattr(self, "quiet", False) and opencode2_output(t):

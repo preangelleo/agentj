@@ -325,6 +325,7 @@ class SharedCodexCompletion(unittest.IsolatedAsyncioTestCase):
     async def test_completion_uses_existing_thread_and_original_permissions(self):
         from agentj.shared_codex import SharedCodexAgent
         host = Mock()
+        host.peers.xfer.broker.drain = AsyncMock(return_value=None)
         a = SharedCodexAgent(host, {"kind": "codex", "dir": "/tmp", "_workflow_ceo": True,
                                    "shared_session_id": "11111111-1111-1111-1111-111111111111"})
         a.tid = a.cfg["shared_session_id"]

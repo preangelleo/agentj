@@ -1038,6 +1038,58 @@ def prune_artifacts(root, keep) -> None:
         os.close(fd)
 
 
+def _prune_download_cache(root, previous, *, reconstructed_only=False):
+    import stat
+    rootfd = os.open(root, _NOFOLLOW_DIR)
+    try:
+        if not _private_dir(rootfd):
+            return
+        fd = os.open('upgrade-cache', _NOFOLLOW_DIR, dir_fd=rootfd)
+        try:
+            if not _private_dir(fd):
+                return
+            for name in os.listdir(fd):
+                match = re.fullmatch(r'agentj-([0-9A-Za-z.+]+)-py3-none-any\.verified\.json', name)
+                if not match or update.compare(match[1], previous) != -1:
+                    continue
+                with contextlib.suppress(OSError):
+                    info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+                        continue
+                    if reconstructed_only and not _is_reconstructed_receipt(fd, name):
+                        continue
+                    wheel = name.removesuffix('.verified.json') + '.whl'
+                    info = os.stat(wheel, dir_fd=fd, follow_symlinks=False)
+                    if stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o022:
+                        os.unlink(wheel, dir_fd=fd)
+                        os.unlink(name, dir_fd=fd)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(rootfd)
+
+
+def _is_reconstructed_receipt(fd, name):
+    try:
+        recfd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        with os.fdopen(recfd, 'rb') as receipt:
+            value = json.loads(receipt.read(2048))
+        return (isinstance(value, dict) and value.get('installed_record') is True
+                and value.get('signed') is False and value.get('signature') is None)
+    except (OSError, ValueError, RecursionError):
+        return False
+
+
+def prune_upgrade_downloads(st, current, previous):
+    """Discard old downloads after success, preserving signed state recovery artifacts."""
+    if not isinstance(current, str) or not isinstance(previous, str) or update.compare(current, previous) != 1:
+        return
+    with contextlib.suppress(OSError):
+        _prune_download_cache(st.root, previous, reconstructed_only=True)
+    with contextlib.suppress(OSError):
+        _prune_download_cache(update.upgrade_cache_root()[0], previous)
+
+
 def snapshot_worker(st, folder: str, module: str, *, target=None, job=None) -> Path:
     """Copy this agentj package (code and its packaged data) into the state directory and return a run.py that starts
     `module.run(State())` from that copy. `uv tool install --force` deletes and recreates the whole tool venv; a worker
@@ -1536,6 +1588,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if job['phase'] == 'installed':
             verify(job['to'])
             prune_artifacts(st.root, (job['to'], job.get('from')))    # 0334: keep the current + the previous version
+            prune_upgrade_downloads(st, job['to'], job.get('from'))
             result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when','retry_count','uv_repaired') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
             finish(st, result, {'step': 'health'})
             save('done')

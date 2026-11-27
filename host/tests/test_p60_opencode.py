@@ -71,6 +71,52 @@ class Classify(unittest.TestCase):
         self.assertNotIn("内部错误", notices[0])
 
 
+class V2OwnerTool(unittest.TestCase):
+    def test_owner_call_requires_exact_local_shell_events_and_zero_exit(self):
+        broker = mock.Mock()
+        a = object.__new__(oc2.OpenCodeV2Agent)
+        a.host = SimpleNamespace(agent=a, peers=SimpleNamespace(xfer=SimpleNamespace(broker=broker)))
+        a.cfg, a.research, a.sid = {"dir": "/work"}, False, "ses_fixture"
+        a.turn_done, a.turn_t0 = asyncio.Event(), 1000
+        a._owner_shell_call = mock.Mock(return_value=("key", {}, {}, ("ses_fixture", "msg"), ("command", "/work")))
+
+        def event(kind, message="msg", **fields):
+            a._owner_tool_event({"type": f"session.tool.{kind}", "created": 1001},
+                                {"sessionID": a.sid, "assistantMessageID": message, "id": "call", **fields})
+
+        event("input.started", name="shell")
+        event("called", input={"command": "command"}, executed=True)
+        event("success", executed=True, metadata={"exit": 0})
+        a._owner_shell_call.assert_not_called()
+        broker.complete.assert_not_called()
+
+        for exit_code in (127, False, 0):
+            with self.subTest(exit_code=exit_code):
+                broker.reset_mock()
+                event("input.started", name="shell")
+                event("called", input={"command": "command"}, executed=False)
+                event("success", "other-msg", executed=False, metadata={"exit": 0})
+                broker.complete.assert_not_called()
+                event("success", executed=False, metadata={"exit": exit_code},
+                      content=[{"type": "text", "text": "fixture output"}])
+                broker.complete.assert_called_once_with(
+                    "key", type(exit_code) is int and exit_code == 0, ["fixture output"],
+                    native=("ses_fixture", "msg"), native_shell=("command", "/work"))
+
+    def test_v2_permission_uses_native_tool_source_and_exact_resource(self):
+        a = object.__new__(oc2.OpenCodeV2Agent)
+        a.sid, a.turn_done = "ses_fixture", asyncio.Event()
+        binding = ("key", {"command": "command"}, {"command": "command"}, (a.sid, "msg"), ("command", "/work"))
+        a._owner_tool_events = {(a.sid, "msg", "call"): (a.turn_done, binding)}
+        request = {"action": "shell", "sessionID": a.sid, "resources": ["command"],
+                   "source": {"type": "tool", "messageID": "msg", "id": "call"}}
+        self.assertEqual(a._owner_permission_shell(oc2.to_v1_request(request), a.sid), binding)
+        self.assertIsNone(a._owner_permission_shell(oc2.to_v1_request({**request, "resources": ["other"]}), a.sid))
+        self.assertIsNone(a._owner_permission_shell(oc2.to_v1_request(request), "ses_other"))
+        a.turn_done = asyncio.Event()
+        self.assertIsNone(a._owner_permission_shell(oc2.to_v1_request(request), a.sid))
+
+
 class V2Pieces(unittest.TestCase):
     def test_rules_round_trip_shell_is_bash(self):
         v2 = [{"action": "*", "resource": "*", "effect": "allow"}, {"action": "shell", "resource": "rm *", "effect": "deny"}]
