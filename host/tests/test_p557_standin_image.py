@@ -146,9 +146,9 @@ class WeChatAvatar(_Channel):
                 await c.receive(api, {'from_user_id': 'owner', 'message_type': 1, 'message_id': 1, 'context_token': 'fixture',
                                       'item_list': [{'type': 1, 'text_item': {'text': '画图'}}]}, c.store.data['generation'])
             upload.assert_called_once(); c.model.assert_not_awaited()
-            first = json.loads(tr.calls[0][0][3])['msg']['item_list'][0]
-            self.assertEqual(first['text_item']['text'], '画好了！宫崎骏风格的少女在山坡遛狗，16:9。')
-            self.assertEqual(json.loads(tr.calls[1][0][3])['msg']['item_list'][0]['type'], 2)
+            self.assertEqual(json.loads(tr.calls[0][0][3])['msg']['item_list'][0]['type'], 2)
+            words = json.loads(tr.calls[1][0][3])['msg']['item_list'][0]
+            self.assertEqual(words['text_item']['text'], '画好了！宫崎骏风格的少女在山坡遛狗，16:9。')
             c.open_card.assert_not_called()
             self.assertEqual(self.host.hist_add.call_args.args[0]['k'], 'wechat')
         finally:

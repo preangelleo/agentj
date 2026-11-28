@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { ASR_KEYS, DEFAULT_HOTWORDS, validAsr, bindAsr } from '../public/js/asr-settings.js';
 const custom = {mode:'custom',base_url:'http://asr.local/v1',model:'qwen-asr',key_env:'',hotwords:DEFAULT_HOTWORDS};
 test('#440: custom ASR permits unauthenticated LAN and named secrets, rejects URL secrets', () => {
@@ -23,8 +24,27 @@ test('#440: fixed notice survives blob and API boundaries in both success and fa
     assert.ok((text.match(/notice: [mr]\.notice/g)||[]).length>=2,file);
   }
   const text=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
-  assert.match(text,/\['local_fallback', 'remote_unavailable'\]\.includes\(r.notice\)/);
+  assert.match(text,/result.notice !== 'local_fallback'/);
+  assert.match(text,/r.notice==='remote_unavailable'/);
+  assert.doesNotMatch(text,/asrNotice/);
   assert.match(text,/pttMode.*asr440.sendAudio.*asr440.sendText/);
+});
+
+test('short ASR preserves remote success only, including explicit legacy remote engines', () => {
+  const blobSource = readFileSync(new URL('../public/js/blobs.js',import.meta.url),'utf8');
+  const handle = blobSource.slice(blobSource.indexOf('export function handle(m)'),blobSource.indexOf('/** After a reconnect:'));
+  let result;
+  const ctx = vm.createContext({live:new Map([['test',{finish: r => { result = r; }}]])});
+  vm.runInContext(handle.replace('export function','function'),ctx);
+  for (const details of [{engine:'custom'}, {engine:'openai'}, {engine:'openrouter'}, {remote:true}]) {
+    ctx.handle({t:'asr_res',bid:'test',ok:true,text:'synthetic',...details});
+    assert.equal(result.remote,true,JSON.stringify(details));
+  }
+  for (const details of [{engine:'sherpa'}, {engine:'voxtype'}, {remote:'true'}, {ok:false,remote:true},
+    {engine:'custom',notice:'local_fallback'}, {remote:true,notice:'remote_unavailable'}]) {
+    ctx.handle({t:'asr_res',bid:'test',ok:true,text:'synthetic',...details});
+    assert.equal(Object.hasOwn(result,'remote'),false,JSON.stringify(details));
+  }
 });
 
 test('#440: keyed route changes require the Agent; key card never binds a host secret', async () => {

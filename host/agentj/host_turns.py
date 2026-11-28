@@ -14,6 +14,9 @@ other files, sed / grep / journalctl) keeps the existing path. Log reads are def
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import contextvars
 import json
 import os
 import secrets
@@ -29,6 +32,35 @@ _VALUE_FLAGS = {"head": {"-n", "-c"}, "tail": {"-n", "-c"}}
 _FLAGS = {"cat": {"-n", "-b", "-A", "-v", "-E", "-T", "-s"}, "nl": {"-ba"}, "wc": {"-l", "-w", "-c", "-m"},
           "head": set(), "tail": set()}
 _HARNESS_SKILLS = (".claude/skills", ".agents/skills", ".codex/skills", ".config/opencode/skills")
+_NATIVE_COMPLETION = contextvars.ContextVar("native_completion", default=None)
+
+
+def _main_send(host):
+    from . import approval_review, provenance
+    agent = getattr(host, "agent", None)
+    if (agent is None or provenance._paired_source() is not provenance._UNSET or provenance._REQUEST.get() is not provenance._UNSET
+            or provenance.task_scope() is not None or approval_review.ORIGIN.get() is not None
+            or provenance._shared_child(agent) is not provenance._UNSET):
+        return None
+    return getattr(agent, "cur_send", None)
+
+
+def is_completion(host):
+    """A main-thread completion, including a source-unknown status-only retry."""
+    native = _NATIVE_COMPLETION.get()
+    if native is not None and native[0] is host and native[1] is asyncio.current_task():
+        return True
+    from .background_done import CompletionSend
+    return type(_main_send(host)) is CompletionSend
+
+
+@contextlib.contextmanager
+def native_completion_request(host):
+    token = _NATIVE_COMPLETION.set((host, asyncio.current_task()))
+    try:
+        yield
+    finally:
+        _NATIVE_COMPLETION.reset(token)
 
 
 def kind(host):
@@ -36,12 +68,7 @@ def kind(host):
     from . import approval_review, compose, provenance
     from .background_done import CompletionSend
     from .heartbeat import HeartbeatSend
-    agent = getattr(host, "agent", None)
-    if (agent is None or provenance._paired_source() is not provenance._UNSET or provenance._REQUEST.get() is not provenance._UNSET
-            or provenance.task_scope() is not None or approval_review.ORIGIN.get() is not None
-            or provenance._shared_child(agent) is not provenance._UNSET):
-        return None
-    send = getattr(agent, "cur_send", None)
+    send = _main_send(host)
     if send is None or provenance.normalize(getattr(send, "source", None))["kind"] != "system" or getattr(send, "hook_notice", None):
         return None
     if type(send) is HeartbeatSend:
@@ -55,7 +82,7 @@ def kind(host):
     meta = getattr(send, "approval_review", None)
     if send.by == "approval-review" and isinstance(meta, dict):
         item = approval_review._outbox(host).get(meta.get("event_id"))
-        if item is not None and item.get("target") == approval_review.thread_ref(agent) and item.get("request_id") == meta.get("id"):
+        if item is not None and item.get("target") == approval_review.thread_ref(host.agent) and item.get("request_id") == meta.get("id"):
             return "approval_review"
     return None
 

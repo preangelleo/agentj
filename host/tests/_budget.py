@@ -47,12 +47,14 @@ MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte 
 # slim-1122 (2026-11-22 减体积单，第一轮): core measured 4,792,144 B on fix/slim-1122 (−7,767 B: serve.py S6 follow-up helpers,
 # en.phone.xz re-encoded); core cap lowered to measured + 4 KiB = 4,796,240 B. P114 60,300 B and P155 41,328 B are unchanged,
 # so their caps stay. No row is back inside its ceiling yet, so all three rows remain (ARCHITECTURE「slim-1122」lists what is left).
+# 0.30.81 after compressing release history: P118 = 4,807,541 B. Retain 4,809,589 B (measured + 2 KiB).
+# RULING-0381-core-budget-jarvis-20261128.md authorizes the exact fallback after one slimming pass.
 WIDER = {'combined bounded allocations': 4595969,   # P0269_BUDGET_WAIVER
          'P170 e-mail channel allocation (+ P206 A mail expect) is bounded': 44175,   # P0306_BUDGET_WAIVER
          'P114 browser package allocation is bounded': 70000,                          # Approved for 0.30.76 browser backends and bundled skill
          'P155 harness-switch allocation (+ P282 + P312) is bounded': 42352,           # P0369_BUDGET_WAIVER
          # the label is the first 120 characters of the test message
-         'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P2': 4796240}   # P0369_BUDGET_WAIVER, lowered by slim-1122
+         'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P2': 4809589}   # 0.30.81 exact post-slim cap
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:

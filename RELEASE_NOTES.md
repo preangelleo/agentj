@@ -1,4 +1,4 @@
-# Agent J v0.30.80
+# Agent J v0.30.81
 
 Background notices survive restart. Verified pending tasks resume after recovery. Each YouTube upload needs approval.
 

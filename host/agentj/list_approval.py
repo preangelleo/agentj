@@ -204,6 +204,8 @@ def _retry_display_matches(tool, cwd, inp, summary):
 
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
               receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None, order_owner=False):
+    from . import claude_children, host_turns
+    child_request = claude_children.request(host)
     try:
         state_subject = StateSubject.capture(host)
     except (OSError, ValueError, TypeError, KeyError):
@@ -272,10 +274,12 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         # is answered exactly as before (security r3-4 / r3-5). Protected-target calls never get here: uv is already
         # set for them above.
         from . import approval_offlist, trust_taint
-        if trust_taint.tainted(getattr(host, 'agent', None)) is not None:
+        child = child_request.child if child_request is not None else None
+        retained = {"retained": "external"} if child is not None and child.external_read else {}
+        if trust_taint.tainted(getattr(host, 'agent', None)) is not None or retained:
             typed = approval_offlist.source(host, settings_context=settings_context, background=background,
                                             order_owner=order_owner)
-            taint_kind = await asyncio.to_thread(trust_taint.escalates, host, tool, inp, _seam_cwd(host, cwd), typed)
+            taint_kind = await asyncio.to_thread(trust_taint.escalates, host, tool, inp, _seam_cwd(host, cwd), typed, **retained)
             if taint_kind:
                 uv = True
                 host.st.log('trust_taint_uv', kind=taint_kind, source_type=typed.get('type'), trust=typed.get('trust'))
@@ -305,6 +309,14 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         return refused('serve_stop', 'Agent J serve has stopped; no operation executed.')
     if host.stopped():
         return refused('estop', '已急停，未执行 / Stop everything is on; no operation executed.')
+    completion = (harness_permission and background is None and settings_context is None and host_turns.is_completion(host))
+    if completion or (child_request is not None and (child_request.notice is not None or child_request.launch is None)):
+        from . import approval_offlist
+        if uv or tool in approval_offlist.NATIVE_CARDS:
+            if completion or child_request.notice is not None:
+                return refused('off_list_write_host_read',
+                               '后台任务通知只可查询结果，新操作请主人重新发起 / A background completion may read results only. Ask the owner for a new request.')
+            return refused('off_list_write_unknown', '无法核实子任务来源 / The child task source could not be verified.')
     if uv_list.git_config_read(tool, inp):
         # Keep existing credential-file, private-state and source refusals.
         # Git value listings never take the headless fingerprint exemption.
@@ -320,14 +332,15 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         if native_context is not None and not native_context.live(host):
             return refused('native_context_changed', 'Native session context changed; no operation executed.')
         if (src.get('trust') != 'owner' or src.get('type') not in ('owner_remote', 'owner_terminal', 'owner_channel')
-                or background is not None or authority != host._approval_live_authority() or (gone is not None and gone.done())):
+                or background is not None or child_request is not None
+                or authority != host._approval_live_authority() or (gone is not None and gone.done())):
             return refused('git_config_read_source', uv_list.GIT_CONFIG_READ_UV)
     resume_context = approval_review.digest({'only':only,'host_card':bool(host_card),
         'harness_permission':bool(harness_permission),'task_actions':task_actions,'task_target':task_target,
         'cwd':os.path.realpath(cwd) if cwd else None,
         'native_session':native_context.session if native_context else None,
         'native_process':getattr(native_context.process,'pid',None) if native_context else None})
-    resumed = None if retry else take_resume(host,tool,inp,uv,resume_context,settings_session)
+    resumed = None if retry or child_request is not None or completion else take_resume(host,tool,inp,uv,resume_context,settings_session)
     if resumed is not None:
         if isinstance(receipt,dict):
             receipt.update(reason='request_continuation',approval_card_shown=False)
@@ -373,6 +386,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     request_typed = approval_offlist.source(host, settings_context=settings_context, background=background)
     def subject_live():
         return (state_subject.live(host) and not host.stopped() and not host.stopping.is_set()
+                and (child_request is None or child_request.live())
                 and (gone is None or not gone.done())
                 and (native_context is None or native_context.live(host))
                 and (settings_context.live(host) if settings_context else
@@ -495,7 +509,10 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
             decision,did,sk,sig = 'deny',None,None,None
             reason = 'agent_gone'
         elif a.review_pause in done and not a.fut.done():
-            return host._park(a,base,summary,host._park_key(tool,isha),None,why='question')
+            if child_request is None:
+                return host._park(a,base,summary,host._park_key(tool,isha),None,why='question')
+            decision,did,sk,sig = 'deny',None,None,None
+            reason = 'authority_changed'
         elif a.fut in done:
             decision,did,sk,sig = a.fut.result()
             reason = 'device' if did else 'estop' if host.stopped() else getattr(a,'withdrawn',None) or 'serve_stop'

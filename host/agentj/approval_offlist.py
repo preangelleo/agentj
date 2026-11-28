@@ -265,6 +265,14 @@ def source(host, *, settings_context=None, background=None, order_owner=False):
         active = provenance._REQUEST.get()
         if active is not provenance._UNSET:
             return _from_normalized(host, active)
+        from . import claude_children
+        native = claude_children.request(host)
+        if native is not None:
+            if not native.live() or native.launch is None:
+                return _make("unknown", None, "unknown")
+            if native.notice is not None:
+                return dict(_make("host_system", _SYSTEM_NAMES["background_done"], "host_read"), native_notice=True)
+            return _from_normalized(host, native.launch.source, native.launch.send)
         child = provenance._shared_child(agent)
         if child is not provenance._UNSET:
             return _from_normalized(host, child)
@@ -883,7 +891,7 @@ def decide(host, tool, inp, cwd, src):
         return "deny", "off_list_" + hit, hit
     if trust in ("owner", "host"):
         return "allow", "off_list", None
-    if closed_read(host, tool, inp, cwd, trust):
+    if closed_read(host, tool, inp, cwd, "unknown" if src.get("native_notice") else trust):
         return "allow", "off_list_read", None
     if trust == "external" and _same_owner_live(src) and closed_diag(host, tool, inp, cwd):
         return "allow", "off_list_diag", None      # R-0056: the relation is re-checked here, at decision time
@@ -897,8 +905,11 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
     """The answer to an off-list request: audited, never a card. The source is read on the loop (paired requests and
     shared children are bound to the running task); filesystem checks and the audit row run off-loop."""
     import asyncio
+    from . import claude_children
+    native = claude_children.request(host)
     def live():     # R-0047 item 3 / R-0056 (security r1 F2): dispatch binding and same-owner seat, wherever the State is
-        return (state_subject.live(host) and (src.get("type") != "busy_dispatch" or _dispatch_live(host, background))
+        return (state_subject.live(host) and (native is None or native.live())
+                and (src.get("type") != "busy_dispatch" or _dispatch_live(host, background))
                 and (src.get("verified_same_owner") is not True or _same_owner_live(src)))
 
     def changed():
@@ -922,7 +933,8 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
     except Exception:  # noqa: BLE001 — no exemption, the ordinary decision below
         own_cfg = None
     own = own_cfg is not None and await asyncio.to_thread(
-        lambda: handoff.own_read(tool, inp, own_cfg) or handoff.own_state(tool, inp, own_cfg))
+        lambda: handoff.own_read(tool, inp, own_cfg)
+        or ((native is None or native.notice is None) and handoff.own_state(tool, inp, own_cfg)))
     if not live():
         return changed()
     decision, reason, key = ("allow", "own_handoff", None) if own else await asyncio.to_thread(decide, host, tool, inp, cwd, src)

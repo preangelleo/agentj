@@ -460,7 +460,9 @@ class Broker:
         elif req.get('delivery') == 'wechat':
             why = result.get('why')
             if hint := file_show.SEND_FAILURE_HINTS.get(why) or file_show.WECHAT_FILE_HINTS.get(why):
-                result.setdefault('hint', hint)
+                from .text import one
+                result.setdefault('hint', one(x.svc.host.lang, hint))
+            self._record_wechat_result(row, result)
         while len(self.receipts) > 64:
             self.receipts.pop(next(iter(self.receipts)))
         x.svc.host.agent_notice(('FILE_SEND_RESULT: ' if req.get('delivery') == 'wechat' else 'FILE_SHOW_RESULT: ' if req['t'] == 'file_show' else 'SECRET_TASK_RESULT: ') + json.dumps(result, ensure_ascii=False))
@@ -514,7 +516,33 @@ class Broker:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
-        return self.receipt(req)
+        if req.get('delivery') != 'wechat':
+            return self.receipt(req)
+        from . import file_show, wechat_forward
+        row, denied = self._receipt_row(req)
+        if denied:
+            return denied
+        host = self.xfer.svc.host
+        result = await asyncio.to_thread(file_show.send_preflight, host, req, row['project_root'])
+        current, denied = self._receipt_row(req)
+        if denied or current is not row:
+            return denied or file_show.failure('native_admission_expired')
+        if not wechat_forward.file_binding_live(host, row['file_delivery']):
+            return file_show.failure('binding_changed')
+        if result:
+            self._record_wechat_result(row, result)
+            return result
+        row['issued'] = True
+        result = _pending(row)
+        self._record_wechat_result(row, result)
+        return result
+
+    @staticmethod
+    def _record_wechat_result(row, result):
+        binding = row['file_delivery']
+        if binding.get('inbound'):
+            from .file_show import request_path
+            binding['adapter'].record_file_result(row['execution'].send, binding, row['ticket'], request_path(row['request']), result)
 
     def receipt(self, req):
         if req.get('op') == 'grants' and not req.get('revoke'):
@@ -522,6 +550,13 @@ class Broker:
         receipt = self.receipts.pop(key(req), None)
         if receipt and receipt[0] > time.monotonic():
             return receipt[1]
+        row, denied = self._receipt_row(req)
+        if denied:
+            return denied
+        row['issued'] = True
+        return _pending(row)
+
+    def _receipt_row(self, req):
         matching = [row for row in self.calls.values() if row.get('admitted') and key(row['request']) == key(req)]
         rows = [row for row in matching if row['check']() and (row.get('start_ready') is None or row['start_ready'].is_set())]
         if len(rows) != 1:
@@ -536,11 +571,9 @@ class Broker:
                        else 'native_admission_request_mismatch' if candidates
                        else 'native_admission_missing' if execution and execution.live and execution.send is not None
                        else 'no_owner_session')
-                return {'result': 'failure', 'why': why, 'client_downloaded': False}
-            return {'ok':False, 'result':'refused', 'why':'caller'} if req.get('t') == 'tell' else {'result':'refused', 'why':'caller'}
-        row = rows[0]
-        row['issued'] = True
-        return _pending(row)
+                return None, {'result': 'failure', 'why': why, 'client_downloaded': False}
+            return None, {'result':'refused', 'why':'caller', **({'ok':False} if req.get('t') == 'tell' else {})}
+        return rows[0], None
 
 
 def _contains(output, pending, depth=0):

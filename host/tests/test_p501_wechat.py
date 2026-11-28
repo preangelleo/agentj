@@ -77,7 +77,10 @@ class Protocol(unittest.TestCase):
             self.assertEqual(media.download(item),plain)
             if typ==3: continue             # outgoing audio must use file type 4
             tr.replies.extend([{'upload_param':'fixture-up'}, (200,{'x-encrypted-param':'fixture-down'},b'')])
-            out=media.upload('owner',item,plain)
+            # Outbound attachment metadata is a checked basename. The inbound path-like name above
+            # deliberately stays an independent download fixture.
+            outbound = {**item, kind+'_item': {**detail, 'file_name':'file.txt'}}
+            out=media.upload('owner',outbound,plain)
             spec=json.loads(tr.calls[1][0][3]); encrypted=tr.calls[2][0][3]
             self.assertEqual(spec['rawfilemd5'],hashlib.md5(plain).hexdigest())
             self.assertEqual(spec['media_type'],{2:1,4:3,5:2}[typ])
@@ -89,9 +92,10 @@ class Protocol(unittest.TestCase):
         for error, attempts in [(p.Failure('http_error',http=403),2), ((200,{},b''),3)]:
             tr=Transport([{'upload_full_url':p.CDN+'/upload'},error,(200,{'x-encrypted-param':'d'},b'')])
             media=p.Media(p.API(ACCOUNT,tr))
+            item = {'type':4, 'file_item':{'file_name':'fixture.txt'}}
             if attempts==2:
-                with self.assertRaises(p.Failure):media.upload('owner',{'type':4},b'hello')
-            else: self.assertEqual(media.upload('owner',{'type':4},b'hello')['type'],4)
+                with self.assertRaises(p.Failure):media.upload('owner',item,b'hello')
+            else: self.assertEqual(media.upload('owner',item,b'hello')['type'],4)
             self.assertEqual(len(tr.calls),attempts)
 
     def test_plain_image_and_limits_errors(self):

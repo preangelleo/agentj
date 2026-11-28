@@ -1,14 +1,19 @@
 """Voice providers execute on the owner's host. No Agent J API handles plaintext audio.
 Cloud is opt-in, uses named environment variables, fixed official endpoints, bounded bodies,
-and errors never echo provider responses or keys. No retries that could double-charge.
+and errors never echo provider responses or keys. Paid providers only retry proven connection failures.
 """
 import json
 import asyncio
 import base64
+import http.client
 import logging
+import queue
 import signal
+import socket
+import ssl
 import stat
 import tempfile
+import threading
 import time
 import urllib.parse
 from websockets.asyncio.client import connect as _ws_connect
@@ -45,6 +50,10 @@ TTS_ELEVEN_URL='https://api.elevenlabs.io/v1/text-to-speech/'
 TTS_REALTIME_URL='wss://api.openai.com/v1/realtime'
 TTS_VOLC_URL='https://openspeech.bytedance.com/api/v3/tts/unidirectional'
 MAX_AUDIO=8*1024*1024
+ASR_RETRY_SECONDS = 1.75
+_ASR_REMOTE_SLOTS = threading.BoundedSemaphore(2)
+_ASR_PRECONNECT = frozenset(('connection_refused', 'dns'))
+_ASR_TRANSIENT = _ASR_PRECONNECT | {'timeout', 'network', 'http_server'}
 
 class SpeechError(p.ConfigError):
     """Fixed reason and metadata only; never retain provider text, URLs or credentials."""
@@ -316,32 +325,114 @@ def volc_frames(content):
     return bytes(pcm)
 
 
-def cloud_asr(path,cfg,timeout=60):
-    custom=p.get(cfg,'voice.asr.mode')=='custom'
-    name=p.get(cfg,'voice.asr.key_env'); key=os.environ.get(name,'')
-    if (name or not custom) and not key:return {'ok':False,'reason':'engine_failed'}
+def _asr_failure(category, *, reason='engine_failed', http_status=None):
+    result = {'ok': False, 'reason': reason, 'remote_failure': category}
+    if http_status is not None:
+        result['http_status'] = http_status
+    return result
+
+
+def _asr_transport_failure(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        status = exc.code
+        exc.close()
+        category = {401: 'authentication', 402: 'quota', 403: 'authentication',
+                    404: 'endpoint', 405: 'endpoint', 408: 'timeout',
+                    429: 'rate_limit'}.get(status)
+        if category is None:
+            category = 'http_server' if 500 <= status < 600 else 'redirect' if 300 <= status < 400 else 'http_client'
+        return _asr_failure(category, http_status=status)
+    if isinstance(exc, urllib.error.URLError):
+        exc = exc.reason
+    if isinstance(exc, TimeoutError):
+        return _asr_failure('timeout')
+    if isinstance(exc, ConnectionRefusedError):
+        return _asr_failure('connection_refused')
+    if isinstance(exc, socket.gaierror):
+        return _asr_failure('dns')
+    if isinstance(exc, ssl.SSLError):
+        return _asr_failure('tls')
+    if isinstance(exc, ValueError):
+        return _asr_failure('invalid_response')
+    return _asr_failure('network')
+
+
+def cloud_asr(path, cfg, timeout=60, *, cancelled=None, deadline=None):
+    custom = p.get(cfg, 'voice.asr.mode') == 'custom'
+    name = p.get(cfg, 'voice.asr.key_env')
+    key = os.environ.get(name, '')
+    if (name or not custom) and not key:
+        return _asr_failure('missing_key')
     try:
-        data=pathlib.Path(path).read_bytes()
-        if len(data)>25*1024*1024:return {'ok':False,'reason':'bad_audio'}
-        boundary='agentj'+uuid.uuid4().hex
-        fields={'model':p.get(cfg,'voice.asr.model')}
-        if not isinstance(fields['model'],str) or any(ord(c)<32 for c in fields['model']): return {'ok':False,'reason':'engine_failed'}
-        words=list(dict.fromkeys(['Olares', *p.get(cfg,'voice.asr.hotwords',[])]))
-        if words: fields['prompt']=', '.join(words)
-        body=b''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n'.encode() for field,value in fields.items())
-        body+=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode()+data+f'\r\n--{boundary}--\r\n'.encode())
-        url=asr_endpoint(p.get(cfg,'voice.asr.base_url')) if custom else (ASR_URL if p.get(cfg,'voice.asr.provider')=='openrouter' else ASR_OPENAI_URL)
-        res=json.loads(_request(url,key,body,'multipart/form-data; boundary='+boundary,timeout,256*1024))
-        text=res.get('text')
-        # An unreachable/failed service and an empty response are both service
-        # failures.  Empty text is not evidence that the recording was silent;
-        # the local recovery path must get a chance to transcribe it.
-        if not isinstance(text,str) or len(text)>64000:
-            return {'ok':False,'reason':'engine_failed','detail':'remote ASR returned an invalid response'}
-        if not text.strip():
-            return {'ok':False,'reason':'engine_failed','detail':'remote ASR returned empty text'}
-        return {'ok':True,'text':correct_transcript(text,cfg),'engine':'custom' if custom else p.get(cfg,'voice.asr.provider')}
-    except Exception:return {'ok':False,'reason':'engine_failed'}
+        with pathlib.Path(path).open('rb') as stream:
+            data = stream.read(25 * 1024 * 1024 + 1)
+    except OSError:
+        return _asr_failure('bad_audio', reason='bad_audio')
+    if len(data) > 25 * 1024 * 1024:
+        return _asr_failure('bad_audio', reason='bad_audio')
+    try:
+        model = p.get(cfg, 'voice.asr.model')
+        if not isinstance(model, str) or any(ord(c) < 32 for c in model):
+            return _asr_failure('invalid_config')
+        provider = 'custom' if custom else p.get(cfg, 'voice.asr.provider')
+        url = (asr_endpoint(p.get(cfg, 'voice.asr.base_url')) if custom
+               else ASR_URL if provider == 'openrouter' else ASR_OPENAI_URL)
+        boundary = 'agentj' + uuid.uuid4().hex
+        words = list(dict.fromkeys(['Olares', *p.get(cfg, 'voice.asr.hotwords', [])]))
+        fields = {'model': model, 'prompt': ', '.join(words)}
+        body = b''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n'.encode()
+                        for field, value in fields.items())
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
+                 f'Content-Type: audio/wav\r\n\r\n'.encode() + data + f'\r\n--{boundary}--\r\n'.encode())
+    except (p.ConfigError, ValueError, TypeError):
+        return _asr_failure('invalid_config')
+    if cancelled is not None and cancelled.is_set():
+        return {'ok': False, 'reason': 'cancelled'}
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.monotonic())
+        if timeout <= 0:
+            return _asr_failure('timeout')
+    try:
+        response = json.loads(_request(url, key, body, 'multipart/form-data; boundary=' + boundary, timeout, 256 * 1024))
+    except (OSError, http.client.HTTPException, ValueError, RecursionError) as exc:
+        return _asr_transport_failure(exc)
+    text = response.get('text') if isinstance(response, dict) else None
+    if not isinstance(text, str) or len(text) > 64000:
+        return _asr_failure('invalid_response')
+    if not text.strip():
+        # Empty text is inconclusive: the local recovery route can still find speech.
+        return _asr_failure('empty_response')
+    return {'ok': True, 'text': correct_transcript(text, cfg), 'engine': provider}
+
+
+def _asr_attempt(path, cfg, timeout, deadline, cancelled):
+    """Bound the caller's wait even during DNS stalls or trickling responses."""
+    if (cancelled is not None and cancelled.is_set()) or deadline <= time.monotonic():
+        return None
+    if not _ASR_REMOTE_SLOTS.acquire(blocking=False):
+        return None
+    result = queue.Queue(maxsize=1)
+
+    def run():
+        try:
+            outcome = cloud_asr(path, cfg, timeout, cancelled=cancelled, deadline=deadline)
+        except Exception:
+            outcome = _asr_failure('engine_failed')
+        finally:
+            _ASR_REMOTE_SLOTS.release()
+        result.put_nowait(outcome)
+
+    # urllib's socket timeout is for one operation. At most two requests can
+    # remain outstanding if the OS transport does not return by the deadline.
+    try:
+        threading.Thread(target=run, name='agentj-asr-http', daemon=True).start()
+    except RuntimeError:
+        _ASR_REMOTE_SLOTS.release()
+        return None
+    try:
+        return result.get(timeout=max(0, deadline - time.monotonic()))
+    except queue.Empty:
+        return _asr_failure('timeout')
 
 
 
@@ -373,40 +464,68 @@ def asr_status(cfg, *, state_dir=None):
     return {k:status[k] for k in ('state','engine','active','model','last_used')}
 
 
-def transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None):
+def transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None,cancelled=None):
     """Host provenance covers the complete route, including recovery time."""
     from . import asr, asr_usage
     started=time.monotonic()
     with asr_usage.suppress_nested():
-        result=_transcribe(path,cfg,timeout,state_dir=state_dir,local_asr=local_asr)
+        result=_transcribe(path,cfg,timeout,state_dir=state_dir,local_asr=local_asr,cancelled=cancelled)
     engine=result.get('engine')
     model=(asr.MODEL_ID if engine=='sherpa' else
            p.get(cfg,'voice.asr.model') if engine in ('custom','openai','openrouter') else None)
-    asr_usage.record(result,state_dir=state_dir,model=model,elapsed_ms=(time.monotonic()-started)*1000,
-                     fallback=result.get('notice')=='local_fallback')
+    asr_usage.record(result,state_dir=state_dir,model=model,elapsed_ms=(time.monotonic()-started)*1000)
     return result
 
 
-def _transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None):
+def _transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None,cancelled=None):
     """One routing boundary shared by serve and CLI. Local workers are demand-only in custom mode."""
     from . import asr
     local_asr=local_asr or asr
     mode=p.get(cfg,'voice.asr.mode')
     if mode in ('custom','cloud'):
+        started = time.monotonic()
+        deadline = started + timeout
         local_asr.shutdown()
-        deadline=time.monotonic()+timeout
-        remote=cloud_asr(path,cfg,max(0.1,min(timeout/2,asr.remote_timeout(path))))
-        if remote.get('ok'): return remote
-        remaining=deadline-time.monotonic()
-        if remaining<=0: return {'ok':False,'reason':'timeout','notice':'remote_unavailable'}
+        primary_timeout = min(timeout / 2, asr.remote_timeout(path))
+        remote = _asr_attempt(path, cfg, primary_timeout, started + primary_timeout, cancelled)
+        if remote is None:
+            if cancelled is not None and cancelled.is_set():
+                return {'ok': False, 'reason': 'cancelled', 'remote_attempted': True}
+            reason = 'timeout' if time.monotonic() >= started + primary_timeout else 'busy'
+            remote = _asr_failure(reason, reason=reason)
+        diagnostic = {'remote_attempted': True, **{k: remote[k] for k in ('remote_failure', 'http_status') if k in remote}}
+        if cancelled is not None and cancelled.is_set():
+            return {'ok': False, 'reason': 'cancelled', **diagnostic}
+        if remote.get('ok'):
+            return {**remote, 'remote': True}
+        failure = remote.get('remote_failure')
+        retryable = _ASR_TRANSIENT if mode == 'custom' and not p.get(cfg, 'voice.asr.key_env') else _ASR_PRECONNECT
+        retry_started = time.monotonic()
+        retry_timeout = min(ASR_RETRY_SECONDS, started + timeout / 2 - retry_started)
+        if failure in retryable and retry_timeout >= 0.1:
+            retry = _asr_attempt(path, cfg, retry_timeout, retry_started + retry_timeout, cancelled)
+            if retry is not None:
+                diagnostic['retried'] = True
+                diagnostic['retry_failure'] = retry.get('remote_failure')
+        else:
+            retry = None
+        if cancelled is not None and cancelled.is_set():
+            return {'ok': False, 'reason': 'cancelled', **diagnostic}
+        if retry is not None and retry.get('ok'):
+            return {**retry, **diagnostic, 'remote': True}
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return {'ok': False, 'reason': 'timeout', 'notice': 'remote_unavailable', **diagnostic}
+        if p.get(cfg, 'voice.asr.engine') == 'off':
+            return {'ok': False, 'reason': remote.get('reason', 'engine_failed'), 'notice': 'remote_unavailable', **diagnostic}
         try:
-            result=local_asr.transcribe(str(path),timeout_s=remaining,state_dir=state_dir,
-                                        engine_override='off' if p.get(cfg,'voice.asr.engine')=='off' else 'sensevoice')
+            result = local_asr.transcribe(str(path), timeout_s=remaining, state_dir=state_dir, engine_override='sensevoice')
         except Exception:
-            result={'ok':False,'reason':'engine_failed'}
+            result = {'ok': False, 'reason': 'engine_failed'}
         finally:
             local_asr.shutdown()
-        result['notice']='local_fallback' if result.get('ok') else 'remote_unavailable'
+        result.update(diagnostic, fallback=True)
+        result['notice'] = 'local_fallback' if result.get('ok') else 'remote_unavailable'
     else:
         result=local_asr.transcribe(str(path),timeout_s=timeout,state_dir=state_dir,engine_override=p.get(cfg,'voice.asr.engine'))
     if result.get('ok'): result['text']=correct_transcript(result.get('text',''),cfg)

@@ -182,7 +182,7 @@ class WeChatAcceptance(_Real):
                 mock.patch.object(channel_native.NativeCodex, 'turn', AsyncMock(return_value=drawn)), \
                 mock.patch('agentj.wechat_protocol.Media.upload', return_value={'type': 2, 'image_item': {'media': {'x': 1}}}):
             await self.receive(ASK_336)
-        self.assertEqual(self.said()[n:], ['画好了：东京塔前的人像。', 'image'])
+        self.assertEqual(self.said()[n:], ['image', '画好了：东京塔前的人像。'])
         self.assertEqual(len(self.sends()), 1, 'the drawer answered; nothing waits in the main queue')
         drawn_page = [t for t in self.host.hist.turns.values() if t['src'].get('k') == 'wechat'][-1]
         self.assertEqual(drawn_page['src']['text'], ASK_336)
@@ -194,7 +194,7 @@ class WeChatAcceptance(_Real):
         with mock.patch('agentj.wechat_protocol.Media.upload', return_value={'type': 4, 'file_item': {'x': 1}}) as up:
             self.answer_turn(send, f'周报做好了，PDF 在 {self.work}/out/report.pdf')
             await asyncio.gather(*list(self.c.card_tasks))
-        self.assertEqual(self.said()[n:], ['周报做好了', 'file'])
+        self.assertEqual(self.said()[n:], ['file', '周报做好了'])
         self.assertEqual(up.call_args.args[2], PDF)
         self.assertNotIn(str(self.work), '\n'.join(x for x in self.said()[n:] if isinstance(x, str)))
         record('wechat', 'file', channel=self.said()[n:], bytes=len(PDF))

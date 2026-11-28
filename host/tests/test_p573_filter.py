@@ -237,7 +237,8 @@ class OwnerWeChat(unittest.IsolatedAsyncioTestCase):
         self.c.store.save()
         sent = []
 
-        async def deliver(api, generation, r, words, images, files):
+        async def deliver(api, generation, r, words, images, files, *, refused=()):
+            self.assertFalse(refused)
             sent.append(words)
         self.c.deliver = deliver
         self.c.api_factory = lambda *_a: None

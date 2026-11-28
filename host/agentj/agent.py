@@ -1261,6 +1261,8 @@ class ClaudeAgent(Agent):
              "--settings", json.dumps(with_reminder(settings, self.cfg), separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
+            if getattr(self.host, "agent", None) is self and not research:
+                a += ["--replay-user-messages"]
         if self.cfg.get("model"):
             a += ["--model", self.cfg["model"]]
         if self.cfg.get("effort") in CLAUDE_EFFORTS:      # §10.11: "for the current session" — no settings write
@@ -1311,6 +1313,9 @@ class ClaudeAgent(Agent):
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                          stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                          start_new_session=True)
+        if "--replay-user-messages" in argv:
+            from .claude_children import Roster
+            self.claude_children = Roster(self, self.proc)
         self.got_init, self.failed_start, self.err_tail, self.raw_tail = False, False, "", ""
         self.native_goal_checked = False
         self.fresh = True                          # P219: the stall watch may say "still nothing" on this first message
@@ -1412,6 +1417,9 @@ class ClaudeAgent(Agent):
                     continue
                 if isinstance(ev, dict):
                     try:
+                        roster = self.__dict__.get("claude_children")
+                        if roster is not None and roster.process is proc and proc is self.proc:
+                            roster.note(ev)
                         self._observe_restart_result(proc, ev)
                         self._busy(ev)
                         self.on_event(ev)
@@ -1791,10 +1799,16 @@ class ClaudeAgent(Agent):
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
             self._report_candidate = None
             self._restart_result, self._restart_had_tools = None, False
-            line = json.dumps({"type": "user", "message": {"role": "user", "content": text}}, ensure_ascii=False) + "\n"
+            frame = {"type": "user", "message": {"role": "user", "content": text}}
             proc = self.proc
 
             async def write():
+                roster = self.__dict__.get("claude_children")
+                if roster is not None and roster.process is proc:
+                    import uuid
+                    frame["uuid"] = str(uuid.uuid4())
+                    roster.sent(frame["uuid"], self.cur_send)
+                line = json.dumps(frame, ensure_ascii=False) + "\n"
                 proc.stdin.write(line.encode())
                 await proc.stdin.drain()
             try:

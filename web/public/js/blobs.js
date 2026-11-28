@@ -189,7 +189,12 @@ export function handle(m) {
   if (m.t === 'blob_ack') u.onAck(m.next);
   else if (m.t === 'blob_err') { if (m.why !== 'dropped') u.fail(m.why); }
   else if (m.t === 'blob_done') u.onDone(m);
-  else if (m.t === 'asr_res') u.finish(m.ok === true ? { ok: true, text: typeof m.text === 'string' ? m.text : '', engine: m.engine, notice: m.notice } : { ok: false, why: m.why || 'unknown', notice: m.notice });
+  else if (m.t === 'asr_res') {
+    // Older hosts identify their custom/cloud routes by engine. Voxtype can run locally.
+    const remote = !['local_fallback', 'remote_unavailable'].includes(m.notice)
+      && (m.remote === true || ['custom', 'openai', 'openrouter'].includes(m.engine));
+    u.finish(m.ok === true ? { ok: true, text: typeof m.text === 'string' ? m.text : '', engine: m.engine, notice: m.notice, ...(remote ? { remote: true } : {}) } : { ok: false, why: m.why || 'unknown', notice: m.notice });
+  }
   return true;
 }
 /** After a reconnect: an upload still waiting for acks of the OLD session (its window went with that socket — e.g. the

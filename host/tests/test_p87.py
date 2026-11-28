@@ -42,7 +42,8 @@ class VoiceBudget(unittest.IsolatedAsyncioTestCase):
                 order.append((path, timeout_s))
                 time.sleep(.02)
                 return {'ok': True, 'text': path}
-        h=SimpleNamespace(asr_lock=None,asr=Engine(),preferences={},st=SimpleNamespace(root='/tmp'))
+        h=SimpleNamespace(asr_lock=None,asr=Engine(),preferences={},st=SimpleNamespace(root='/tmp'),
+                          _asr_route=Host._asr_route)
         results=await asyncio.gather(Host._transcribe(h,'long',compose.asr_budget(600)), Host._transcribe(h,'second',compose.asr_budget(10)))
         self.assertEqual(order, [('long',3780),('second',240)])
         self.assertEqual([r['text'] for r in results], ['long','second'])

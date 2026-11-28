@@ -1368,6 +1368,7 @@ textarea:where([data-aj-owner="aj-wallet-color"])::placeholder{color:var(--aj-wa
 .ask{display:var(--aj-request-sheet-title-display,flex);align-items:var(--aj-request-sheet-title-align-items,center);gap:var(--aj-request-sheet-title-gap,10px);margin-bottom:var(--aj-request-sheet-title-margin-bottom,8px);
   font:var(--aj-request-sheet-title-font,500 calc(13px*var(--fz))/1 var(--font-title));letter-spacing:var(--aj-request-sheet-title-letter-spacing,.06em);color:var(--aj-request-sheet-title-color,var(--ink-soft))}
 .ask .dot{background:var(--c-waiting);animation:aj-status-beat 1.1s ease-in-out infinite}
+.ask:has(>#askText:empty)>.dot{display:none}
 .sheet h2{margin:0 0 16px;font:500 calc(22px*var(--fz))/1.45 var(--font-title);word-break:break-word}
 .aj-approval-command{background:var(--aj-approval-command-background,var(--surface));border-radius:var(--aj-approval-command-border-radius,16px);padding:var(--aj-approval-command-padding,14px 16px);margin-bottom:var(--aj-approval-command-margin-bottom,10px)}
 .aj-notice-command{background:var(--aj-notice-command-background,var(--dlg-bg));border-radius:var(--aj-notice-command-border-radius,16px);padding:var(--aj-notice-command-padding,14px 16px);margin-bottom:var(--aj-notice-command-margin-bottom,10px)}
@@ -2260,7 +2261,9 @@ div.math.display{text-align:center}
 .mmeta{flex:1 1 9em;display:flex;gap:8px;align-items:center;min-width:0;min-height:44px;font:400 calc(13px*var(--fz))/1.35 var(--font-body);color:var(--ink-soft)}
 .mmeta .mico{flex:none;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .mcard[data-kind=image] .mico,.mcard[data-kind=audio] .mico,.mcard[data-kind=video] .mico{display:none}
-.mname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.mname{flex:1;display:flex;min-width:0;white-space:nowrap;color:var(--ink)}
+.mname-stem{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.mname-suffix{flex:none;max-width:100%;overflow-wrap:anywhere;white-space:normal}
 .msize{flex:none;font-family:var(--font-mono)}
 .macts{flex:none;display:flex;justify-content:flex-end;align-items:center;gap:2px;margin-left:auto}
 .macts .mact{-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent;position:relative;
@@ -4319,10 +4322,6 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 .ct-proposed[hidden]{display:none}
 .reply-notices>.gdlg.cp-docked>.sq>.cp-host{background:var(--dbg,var(--dlg-bg));align-self:stretch}
 .reply-notices>.ajmodal.cp-docked>.box>.cp-host{background:var(--dlg-bg)}
-
-/* #440: ordinary preference fields; key material stays in the existing secret card. */
-.asr-notice{width:100%;flex-basis:100%;margin:0 0 6px;color:var(--text);font-size:var(--fs-sm)}
-.asr-notice[hidden]{display:none}
 
 /* #494: forced entry on an unpaired browser exposes public website links only. */
 #settings[data-unpaired="1"] .setbox > :not(.sethead):not(.unpaired-links){display:none!important}

@@ -44,6 +44,7 @@ class TranscriptAttestation:
     consumed: bool = False
     received: bool = False          # display only; never a turn/permission attestation
     created_at: float = field(default_factory=time.time)
+    attested_prompt: str | None = None
 
 
 def mint(agent, send, body):
@@ -107,6 +108,26 @@ def received(agent, item, text):
     return True
 
 
+def phone_prompt(agent, event):
+    """Identify a pending phone delivery to correlate with a native prompt hook."""
+    att = getattr(agent, 'native_request', None)
+    prompt = event.get('prompt_id')
+    session = agent.session or {}
+    address = session.get('messagingSocketPath')
+    body = event.get('prompt')
+    if isinstance(body, str) and body.startswith(NATIVE_PEER_PREFIX) and body.endswith(NATIVE_PEER_SUFFIX):
+        body = body[len(NATIVE_PEER_PREFIX):-len(NATIVE_PEER_SUFFIX)]
+    if (isinstance(att, TranscriptAttestation) and att.source == provenance.phone()
+            and getattr(agent, 'cur_send', None) is att.send
+            and getattr(agent, 'pending_source', None) == att.source
+            and getattr(agent, 'pending_text', None) == att.body
+            and event.get('session_id') == att.session_id == session.get('sessionId')
+            and isinstance(prompt, str) and prompt and isinstance(address, str) and address
+            and body == provenance.envelope(address, att.body, att.source)):
+        return att, prompt
+    return None
+
+
 def delivered(agent, item, text):
     """Admit only the host-held, record-level attestation for this delivery."""
     att = getattr(agent, "native_request", None)
@@ -150,6 +171,11 @@ def delivered(agent, item, text):
     origin = getattr(att.send, "approval_origin", None)
     if provenance.is_owner(att.source) and not agent.untrusted() and _valid(agent, origin):
         agent._owner_approval_origin = (sid, copy.deepcopy(origin))
+        prompt = item.get("promptId")
+        if att.source == provenance.phone() and isinstance(prompt, str) and prompt:
+            from . import application_ingress
+            att.attested_prompt = prompt
+            application_ingress.attest_phone_span(agent.host, att, prompt)
     return True
 
 def prepare(agent, source):

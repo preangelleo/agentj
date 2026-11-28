@@ -82,7 +82,8 @@ class CustomASR(unittest.TestCase):
         local=Mock();local.transcribe.side_effect=ValueError('PRIVATE_SENTINEL')
         with patch('agentj.voice.cloud_asr',return_value={'ok':False,'reason':'engine_failed'}):
             result=voice.transcribe('/sample',config(),local_asr=local)
-        self.assertEqual(result,{'ok':False,'reason':'engine_failed','notice':'remote_unavailable'})
+        self.assertEqual((result['ok'], result['reason'], result['notice'], result['fallback']),
+                         (False, 'engine_failed', 'remote_unavailable', True))
         self.assertNotIn('PRIVATE_SENTINEL',str(result));self.assertEqual(local.shutdown.call_count,2)
 
     def test_named_key_missing_never_contacts_endpoint(self):

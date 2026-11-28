@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import contextlib
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import json
 
 MAX_DRAFT = 256 * 1024
@@ -22,17 +22,17 @@ def broker_scope(host, peer_pid):
     """
     loop=asyncio.get_running_loop()
     state,agent=host.st,getattr(host,'agent',None)
-    origin=_origin(host,peer_pid,'feedback')
+    origin=_origin(host, peer_pid, 'feedback', brokered=True)
     active=True
     def live():
         return (active and host.st is state and getattr(host,'agent',None) is agent
-                and _origin(host,peer_pid,'feedback') == origin)
+                and _origin(host, peer_pid, 'feedback', brokered=True) == origin)
     def refusal():
         return _refusal(host, origin) or (None if live() else 'session_changed')
     async def review(draft,gate):
         if gate != 'feedback':return failure('bad_request')
         if why := refusal():return failure(why)
-        result=await handle(host,{'t':'privacy_check','gate':gate,'draft':draft},peer_pid=peer_pid)
+        result=await handle(host,{'t':'privacy_check','gate':gate,'draft':draft},peer_pid=peer_pid, _brokered_feedback=True)
         return result if live() else failure('session_changed')
     def request_bound(draft,gate):
         # The synchronous support operation runs in to_thread. Never block the
@@ -56,7 +56,41 @@ def broker_scope(host, peer_pid):
 
 
 
-def _origin(host, peer_pid, gate=None):
+@dataclass(frozen=True)
+class _LegacyFeedbackPairing:
+    device: str
+    pub: bytes
+    epoch: int
+    revision: str | None
+
+    def live(self, host, send):
+        from . import wire
+        record = host.st.devices().get(self.device)
+        return (send.device == self.device and self.epoch == getattr(host, '_pairing_epoch', 0)
+                and not getattr(host, '_unbinding_all', False) and isinstance(record, dict)
+                and record.get('pub') == wire.b64u(self.pub)
+                and record.get('pair_revision') == self.revision and 'sk' not in record)
+
+
+def bind_legacy_feedback(host, session, send):
+    """A Noise-authenticated browser without an approval key can still request ordinary feedback."""
+    if session.sign_pub or not host._paired_live(session):
+        return
+    record = host.st.devices().get(session.device)
+    if isinstance(record, dict) and 'sk' not in record and not getattr(host, '_unbinding_all', False):
+        send._legacy_feedback_pairing = _LegacyFeedbackPairing(
+            session.device, session.pub, getattr(host, '_pairing_epoch', 0), record.get('pair_revision'))
+
+
+def _feedback_pairing_live(host, send):
+    from . import approval_material
+    if approval_material.feedback_pairing_live(host, send):
+        return True
+    binding = getattr(send, '_legacy_feedback_pairing', None)
+    return isinstance(binding, _LegacyFeedbackPairing) and binding.live(host, send)
+
+
+def _origin(host, peer_pid, gate=None, *, brokered=False):
     """Return only the live, request-bound caller proof for outbound feedback.
 
     Do not infer owner identity from process ancestry: background/system turns share
@@ -68,11 +102,12 @@ def _origin(host, peer_pid, gate=None):
     origin = approval_material.verified_caller_origin(host, peer_pid)
     if gate != 'feedback':
         return origin
+    paired = _feedback_pairing_live if brokered else approval_material.feedback_pairing_live
     if origin is None:
-        return approval_material.verified_phone_feedback(host, peer_pid)
+        return approval_material.verified_phone_feedback(host, peer_pid, pairing_live=paired)
     send = getattr(getattr(host, 'agent', None), 'cur_send', None)
     if (origin.get('channel') == 'phone' and origin.get('message_id') == getattr(send, 'turn', None)
-            and not approval_material.feedback_pairing_live(host, send)):
+            and not paired(host, send)):
         return None
     return origin
 
@@ -134,7 +169,7 @@ def failure(why):
             'probability': None, 'kind': None}
 
 
-async def handle(host, req, *, peer_pid=None):
+async def handle(host, req, *, peer_pid=None, _brokered_feedback=False):
     from . import privacy, approval_material
     from .heartbeat import session_key
     why = None
@@ -153,7 +188,7 @@ async def handle(host, req, *, peer_pid=None):
     if why is None:
         if gate == 'feedback':
             await approval_material.observe_phone_delivery(host, peer_pid)
-        origin = _origin(host, peer_pid, gate)
+        origin = _origin(host, peer_pid, gate, brokered=_brokered_feedback)
         why = _refusal(host, origin)
     result = None
     if why is None:
@@ -164,7 +199,7 @@ async def handle(host, req, *, peer_pid=None):
             v = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
         try:
             same_authority = (not host.stopped() and host.agent is agent and session_key(agent) == owner
-                              and _origin(host, peer_pid, gate) == origin)
+                              and _origin(host, peer_pid, gate, brokered=_brokered_feedback) == origin)
         except Exception:
             same_authority = False
         if not same_authority:

@@ -275,14 +275,14 @@ def claude_send(session: dict, text: str, source: dict | None = None) -> None:
 BACKGROUND_WAIT = 150     # P552: a headless child's Face ID card waits less than the hook's own 170 s socket timeout
 
 
-def application_ingress_span(agent):
+def application_ingress_span(agent, *, pending_phone_prompt=None):
     """#0302 r3: a native turn whose source is not the owner's opens a guest span (processes born in it never act as owner)."""
     from . import application_ingress
     host = getattr(agent, "host", None)
     if host is not None:
         application_ingress.task_begin(host)
         if not application_ingress._owner_source(getattr(agent, "native_source", None), getattr(agent, "cur_send", None)):
-            application_ingress.open_span(host, native=True)
+            application_ingress.open_span(host, native=True, pending_phone_prompt=pending_phone_prompt)
 
 
 class RecentIds:
@@ -991,7 +991,9 @@ class SharedClaudeAgent(Agent):
         return ("来自子 Agent：" if zh else "From sub-agent: ") + who
 
     async def hook_event(self, event):
-        result = await self._scoped_hook_event(event)
+        from . import host_turns
+        with host_turns.native_completion_request(self.host) if self._completion_tool(event) else contextlib.nullcontext():
+            result = await self._scoped_hook_event(event)
         if (isinstance(event, dict) and event.get("hook_event_name") == "PreToolUse" and not event.get("agent_id")
                 and event.get("tool_name") in ("Agent", "Task") and isinstance(result, dict)
                 and (result.get("hookSpecificOutput") or {}).get("permissionDecision") == "deny"):
@@ -1007,6 +1009,20 @@ class SharedClaudeAgent(Agent):
             output['additionalContext'] = (output.get('additionalContext','') + '\n' + context).strip()
             result = {**result,'hookSpecificOutput':output}
         return result
+
+    def _completion_tool(self, event):
+        if (not isinstance(event, dict) or event.get("agent_id") or event.get("parent_tool_use_id")
+                or event.get("hook_event_name") not in ("PreToolUse", "PermissionRequest")):
+            return False
+        sid, prompt = event.get("session_id"), event.get("prompt_id")
+        if not sid or sid != (self.session or {}).get("sessionId") or not isinstance(prompt, str) or not prompt:
+            return False
+        key = sid, prompt
+        if (self.__dict__.get("_native_completion_hint") == key
+                and self.__dict__.get("_native_completion_prompt") != key and self.transcript):
+            with contextlib.suppress(OSError, ValueError):
+                self.read_transcript()
+        return self.__dict__.get("_native_completion_prompt") == key and self.turn_prompt_id == prompt
 
     async def _scoped_hook_event(self, event):
         aid = event.get("agent_id") if isinstance(event, dict) else None
@@ -1218,10 +1234,14 @@ class SharedClaudeAgent(Agent):
                     hb.forget("compact")
         if name == "UserPromptSubmit" and not event.get("agent_id"):
             prompt = str(event.get("prompt") or "")
-            if not self._phone_echo(event, prompt) and not (self.native_source.get("kind") == "same_host"
+            self._native_completion_hint = ((sid, event.get("prompt_id")) if prompt.lstrip().startswith("<task-notification>")
+                                            else None)
+            phone_prompt = shared_turn_origin.phone_prompt(self, event)
+            phone_attested = phone_prompt and phone_prompt[0].attested_prompt == phone_prompt[1]
+            if not phone_attested and not self._phone_echo(event, prompt) and not (self.native_source.get("kind") == "same_host"
                                                             and prompt.strip() == self.__dict__.get("_peer_text")):
                 self.native_source = provenance.terminal_input(event, prompt, prompt)
-                application_ingress_span(self)   # #0302 r4 C1: terminal_input may be unknown (peer origin / envelope tag)
+                application_ingress_span(self, pending_phone_prompt=phone_prompt)
         elif name in ("SessionStart", "PreCompact") and not event.get("agent_id"):
             self.native_source = provenance.normalize(None)
         self._note_background(name, event)
@@ -2689,6 +2709,8 @@ class SharedClaudeAgent(Agent):
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
                         self._turn_begins(item.get("promptId"))
+                        if ids and item.get("sessionId") == sid and proactive_origin(item) == "task":
+                            self._native_completion_prompt = (sid, item.get("promptId"))
                         self.turn_began_at = handoff.now()
                         mark = getattr(self.host, "proactive_turn", None)   # P132: the next agent-only page says where it came from
                         if mark:

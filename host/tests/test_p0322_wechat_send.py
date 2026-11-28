@@ -97,7 +97,7 @@ class Send(unittest.IsolatedAsyncioTestCase):
         answer = await broker.execute('Bash', inp, 'file-send-call')
         return answer, broker, native, inp
 
-    async def deliver_file(self, path, *, mutate=None):
+    async def deliver_file(self, path, *, mutate=None, refused=None):
         import sys
         answer, broker, native, inp = await self.admit_file(path)
         self.assertEqual(answer['behavior'], 'allow', answer)
@@ -107,6 +107,15 @@ class Send(unittest.IsolatedAsyncioTestCase):
                     str(path), '--to', 'wechat', '--json', cwd=str(self.work), env=env,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, err = await asyncio.wait_for(proc.communicate(), 10)
+        if refused:
+            self.assertEqual(proc.returncode, 1, err.decode())
+            result = json.loads(out)
+            self.assertEqual(result['result'], 'failure')
+            self.assertEqual(result['why'], refused)
+            self.assertEqual(self.requests, [])
+            self.assertFalse(self.notices)
+            self.assertEqual(self.wc.store.data['counts'].get('send_failed', 0), 0)
+            return result
         self.assertEqual(proc.returncode, 0, err.decode())
         queued = json.loads(out)
         self.assertEqual(queued['result'], 'queued')
@@ -160,6 +169,43 @@ class Send(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.received[0]['to_user_id'], ACCOUNT['ilink_user_id'])
         self.assertEqual(self.received[0]['context_token'], 'incoming-context')
         self.assertFalse(self.page.get('media'))
+
+    async def test_wechat_origin_unknown_send_is_not_retried_as_reply_attachment(self):
+        await self.receive_owner()
+        doc = self.work / '演示稿 终版.pdf'
+        doc.write_bytes(b'%PDF-1.4\nsynthetic\n')
+        self.fail_send = True
+        sent = await self.deliver_file(doc)
+        self.assertEqual(sent['result'], 'failure')
+        self.assertTrue(sent['delivery_unknown'])
+        self.assertEqual(len(self.uploads), 1)
+        self.fail_send = False
+
+        record = {'generation': self.wc.store.data['generation'], 'turn': self.send.turn}
+        await self.wc.answer_main(record, f'已发送，请查收。[报告](<{doc}>)。备用 https://example.com/download', False)
+        self.assertEqual(len(self.uploads), 1)
+        self.assertEqual([msg['item_list'][0]['type'] for msg in self.received], [4, 1])
+        reply = self.received[-1]['item_list'][0]['text_item']['text']
+        self.assertIn('尚未确认', reply)
+        self.assertIn('https://example.com/download', reply)
+        self.assertNotIn('已发送，请查收', reply)
+        self.assertEqual(record['delivery'], 'unknown')
+
+    async def test_wechat_origin_keeps_other_reply_attachments(self):
+        await self.receive_owner()
+        first = self.work / '第一份报告.pdf'
+        second = self.work / '另一份报告.pdf'
+        first.write_bytes(b'%PDF-1.4\nfirst\n')
+        second.write_bytes(b'%PDF-1.4\nsecond\n')
+        self.assertEqual((await self.deliver_file(first))['result'], 'sent_to_wechat')
+
+        record = {'generation': self.wc.store.data['generation'], 'turn': self.send.turn}
+        await self.wc.answer_main(record, f'[第一份](<{first}>) [另一份](<{second}>)', False)
+        items = [msg['item_list'][0] for msg in self.received]
+        self.assertEqual([item['type'] for item in items], [4, 4, 1])
+        self.assertEqual([item['file_item']['file_name'] for item in items[:2]], [first.name, second.name])
+        self.assertEqual(self.uploads, [first.read_bytes(), second.read_bytes()])
+        self.assertEqual(record['delivery'], 'sent')
 
     async def test_wechat_origin_cannot_attach_to_page(self):
         await self.receive_owner()
@@ -273,9 +319,15 @@ class Send(unittest.IsolatedAsyncioTestCase):
         with doc.open('wb') as stream:
             stream.write(b'A'*8192)
             stream.truncate(protocol.MAX_MEDIA+1)
-        result = await self.deliver_file(doc)
-        self.assertEqual(result['why'], 'too_big')
-        self.assertEqual(self.requests, [])
+        result = await self.deliver_file(doc, refused='too_big')
+        self.assertEqual(result['max_bytes'], protocol.MAX_MEDIA)
+        self.assertIn('25 MiB', result['hint'])
+
+    async def test_unsupported_type_is_rejected_by_the_cli(self):
+        doc = self.work / '演示稿.pptx'
+        doc.write_text('This is text, not a presentation.')
+        result = await self.deliver_file(doc, refused='type')
+        self.assertIn('unsupported', result['hint'])
 
     async def test_raw_unicode_secret_inside_binary_file_does_not_upload(self):
         secret = '日本語の合成secretvalue'

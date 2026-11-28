@@ -24,10 +24,11 @@ class Images(unittest.IsolatedAsyncioTestCase):
     asyncSetUp = fx.Channel.asyncSetUp
     asyncTearDown = fx.Channel.asyncTearDown
 
-    def arm(self, root=None):
+    def arm(self, root=None, *, uploads=1):
         self.h.media = media.Media(self.st, str(self.work), generated=lambda: root)
         self.c.store.data.update(context='fixture-context', context_at=self.c.clock())
-        self.tr = fx.Transport([{}] + [{'upload_full_url':CDN+'/upload'}, (200, {'x-encrypted-param':'fixture-down'}, b''), {}] * 5)
+        responses = [{'upload_full_url': CDN+'/upload'}, (200, {'x-encrypted-param':'fixture-down'}, b''), {}]
+        self.tr = fx.Transport(responses * uploads + [{}])
         self.c.api_factory = lambda account: API(account, self.tr)
 
     def kinds(self):
@@ -44,7 +45,7 @@ class Images(unittest.IsolatedAsyncioTestCase):
         out.mkdir(parents=True); (out/'image.png').write_bytes(png())
         self.arm(str(out))
         await self.reply(f'画好了：![图]({out}/image.png)')
-        self.assertEqual(self.kinds(), [1, 2])
+        self.assertEqual(self.kinds(), [2, 1])
 
     async def test_claude_opencode_headless_output_copied_to_workdir(self):
         from agentj.wechat import DRAW_HINT
@@ -57,26 +58,24 @@ class Images(unittest.IsolatedAsyncioTestCase):
                 dest = self.work/(kind+'.png'); dest.write_bytes((source/'image.png').read_bytes())
                 self.arm()
                 await self.reply(f'画好了：![图]({dest})')
-                self.assertEqual(self.kinds(), [1, 2])
+                self.assertEqual(self.kinds(), [2, 1])
 
     async def test_forward_page_image_and_document(self):
         (self.work/'image.png').write_bytes(png()); (self.work/'notes.txt').write_text('a short note')
-        self.arm()
+        self.arm(uploads=2)
         items, skips = self.h.media.scan('![图](image.png) [文件](notes.txt)', 1)
         self.assertFalse(skips)
         self.h.hist = NS(get=lambda _: {'id':1,'end':'done','reply':{'text':'图片和文件'},'media':items})
         result = await self.c.forward(1,'paired')
-        self.assertTrue(result['ok']); self.assertEqual(self.kinds(), [1, 2, 4])
+        self.assertTrue(result['ok']); self.assertEqual(self.kinds(), [2, 4, 1])
 
     async def test_customer_main_reply_many_chinese_absolute_paths(self):
         """A bound owner's final Claude reply sends each local file, not only page cards."""
         names = ['七港报告.pdf'] + [f'七港图{i}.png' for i in range(8)]
         for name in names:
             (self.work / name).write_bytes(b'%PDF-1.4\nfixture\n' if name.endswith('.pdf') else png())
-        self.arm()
-        # Provider-shaped responses: one text send + upload negotiation/CDN/send per attachment.
-        self.tr.replies = [{}] + [{'upload_full_url': CDN+'/upload'},
-                                     (200, {'x-encrypted-param':'fixture-down'}, b''), {}] * len(names)
+        # Provider-shaped responses: upload negotiation/CDN/send per attachment, then the text.
+        self.arm(uploads=len(names))
         await self.reply('文件如下：\n' + '\n'.join(str(self.work / name) for name in names))
         self.assertEqual(len(self.kinds()), 10)
         self.assertEqual(self.kinds().count(2), 8)
@@ -86,11 +85,9 @@ class Images(unittest.IsolatedAsyncioTestCase):
         names = [f'新图{i}.jpg' for i in range(7)]
         for name in names:
             (self.work / name).write_bytes(b'\xff\xd8\xff\xe0fixture')
-        self.arm()
-        self.tr.replies = [{}] + [{'upload_full_url': CDN+'/upload'},
-                                     (200, {'x-encrypted-param':'fixture-down'}, b''), {}] * len(names)
+        self.arm(uploads=len(names))
         await self.reply('图片如下：\n' + '\n'.join(str(self.work / name) for name in names))
-        self.assertEqual(self.kinds(), [1] + [2] * 7)
+        self.assertEqual(self.kinds(), [2] * 7 + [1])
 
     async def test_customer_forward_failed_attachment_is_not_silent(self):
         (self.work / '七港图.png').write_bytes(png())
@@ -98,8 +95,9 @@ class Images(unittest.IsolatedAsyncioTestCase):
         items, skips = self.h.media.scan(str(self.work / '七港图.png'), 1)
         self.assertFalse(skips)
         self.h.hist = NS(get=lambda _: {'id':1, 'end':'done', 'reply':{'text':'图片如下'}, 'media':items})
-        self.tr.replies = [{}, RuntimeError('fixture failure')]
+        self.tr.replies = [RuntimeError('fixture failure'), {}]
         result = await self.c.forward(1, 'paired')
+        self.assertFalse(result['ok'])
         self.assertTrue(result['skips'])
         self.assertEqual(result['skips'][0]['why'], 'send_failed')
         self.assertGreaterEqual(self.c.store.data['counts'].get('send_failed', 0), 1)
@@ -107,10 +105,48 @@ class Images(unittest.IsolatedAsyncioTestCase):
     async def test_customer_attachment_upload_failure_counts_send_failed(self):
         (self.work / '七港图.png').write_bytes(png())
         self.arm()
-        self.tr.replies = [{}, RuntimeError('fixture failure')]
+        self.tr.replies = [RuntimeError('fixture failure'), {}]
         await self.reply(str(self.work / '七港图.png'))
         self.assertEqual(self.kinds(), [1])
         self.assertGreaterEqual(self.c.store.data['counts'].get('send_failed', 0), 1)
+
+    async def test_failed_document_upload_cannot_send_success_caption(self):
+        path = self.work / '演示稿 终版（十一月）.pdf'
+        path.write_bytes(b'%PDF-1.4\nsynthetic\n')
+        self.arm()
+        def fail_upload(method, url, *args):
+            if url.endswith('/getuploadurl'):
+                from agentj.wechat_protocol import Failure
+                raise Failure('http_error', http=413)
+            return 200, {}, b'{}'
+        with patch.object(self.tr, 'request', side_effect=fail_upload) as request:
+            result = await self.reply(f'已发送，请查收。[报告](<{path}>)。备用 https://example.com/download')
+        requests = [call.args for call in request.call_args_list]
+        texts = [json.loads(args[3])['msg']['item_list'][0]['text_item']['text']
+                 for args in requests if args[1].endswith('/sendmessage')]
+        self.assertNotEqual(result['delivery'], 'sent')
+        self.assertEqual(len(texts), 1)
+        self.assertNotIn('已发送，请查收', texts[0])
+        self.assertIn('https://example.com/download', texts[0])
+        self.assertEqual(self.c.store.data['counts'].get('send_failed', 0), 1)
+        self.h.st.log.assert_any_call('wechat_attachment', result='provider_too_large',
+                                      phase='getuploadurl', why='http_error', http_status=413, ret=0)
+
+    async def test_oversize_document_refusal_does_not_attempt_attachment(self):
+        from agentj.wechat_protocol import MAX_MEDIA
+        path = self.work / '演示稿 超限.pdf'
+        with path.open('wb') as stream:
+            stream.write(b'%PDF-1.4\n')
+            stream.truncate(MAX_MEDIA + 1)
+        self.arm()
+        result = await self.reply(f'已发送，请查收。[报告](<{path}>)')
+        self.assertNotEqual(result['delivery'], 'sent')
+        self.assertEqual(self.kinds(), [1])
+        self.assertEqual(len(self.tr.calls), 1)
+        reply = json.loads(self.tr.calls[0][0][3])['msg']['item_list'][0]['text_item']['text']
+        self.assertIn('25 MiB', reply)
+        self.assertNotIn('已发送，请查收', reply)
+        self.assertEqual(self.c.store.data['counts'].get('send_failed', 0), 0)
 
     async def test_missing_attachment_records_wechat_error(self):
         self.arm()
@@ -196,7 +232,7 @@ class Scope(unittest.IsolatedAsyncioTestCase):
         out = self.st.root/'accounts'/'codex'/'fixture-account'/'generated_images'/'current'
         out.mkdir(parents=True); (out/'image.png').write_bytes(png())
         self.arm(str(out)); await self.reply(f'画好了：![图]({out}/image.png)')
-        self.assertEqual(self.kinds(), [1, 2])
+        self.assertEqual(self.kinds(), [2, 1])
 
 
 class LaunchHome(unittest.IsolatedAsyncioTestCase):

@@ -314,7 +314,7 @@ def outbound(tool, inp) -> bool:
 _NEVER = frozenset({"settings", "scheduled_task"})    # the owner's settings pages; runs the owner enabled (0.30.11)
 
 
-def escalates(host, tool, inp, cwd, typed) -> str | None:
+def escalates(host, tool, inp, cwd, typed, *, retained=None) -> str | None:
     """The mark's category when this off-list request must take the Face ID card, else None. Runs off-loop.
 
     Three conditions, all required (security review r3): the turn is marked; the request is an outbound send; and the
@@ -322,14 +322,15 @@ def escalates(host, tool, inp, cwd, typed) -> str | None:
     unresolved execution, a write from an unknown / external / host_read source) stays refused, with no card."""
     from . import approval_offlist
     taint = tainted(getattr(host, "agent", None))
-    if taint is None or not isinstance(typed, dict) or typed.get("type") in _NEVER:
+    kind = taint["kind"] if taint is not None else retained
+    if kind not in KINDS or not isinstance(typed, dict) or typed.get("type") in _NEVER:
         return None
     if not outbound(tool, inp):
         return None
     decision, reason, _ = approval_offlist.decide(host, tool, inp, cwd, typed)
     if decision != "allow" or reason == "off_list_handoff_reply":   # the reply the owner's own Face ID already signed
         return None
-    return taint["kind"]
+    return kind
 
 
 def effective_cwd(host, cwd):

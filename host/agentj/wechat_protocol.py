@@ -12,6 +12,8 @@ import urllib.parse
 import urllib.request
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+from .wechat_filename import file_name
 BASE = 'https://ilinkai.weixin.qq.com'
 CDN = 'https://novac2c.cdn.weixin.qq.com/c2c'
 VERSION = '2.4.10'
@@ -21,6 +23,7 @@ class Failure(Exception):
     """Only constant codes and integers may enter this exception."""
     def __init__(self, code, http=0, ret=0):
         self.code, self.http, self.ret = code, http, ret
+        self.phase = None
         super().__init__(code)
 
 
@@ -166,17 +169,24 @@ class Media:
         if len(plain) > MAX_MEDIA:
             raise Failure('local_media_limit_25MiB')
         typ = item['type']
+        name = file_name((item.get('file_item') or {}).get('file_name')) if typ == 4 else None
         key, filekey = secrets.token_bytes(16), secrets.token_hex(16)
         cipher = encrypt(plain, key)
         if valid is not None and not valid():
             raise Failure('file_binding_changed')
-        upload = self.api.call('getuploadurl', {'filekey': filekey, 'media_type': {2: 1, 4: 3, 5: 2}[typ],
-                              'to_user_id': user, 'rawsize': len(plain), 'rawfilemd5': hashlib.md5(plain).hexdigest(),
-                              'filesize': len(cipher), 'no_need_thumb': True, 'aeskey': key.hex()})
+        try:
+            upload = self.api.call('getuploadurl', {'filekey': filekey, 'media_type': {2: 1, 4: 3, 5: 2}[typ],
+                                  'to_user_id': user, 'rawsize': len(plain), 'rawfilemd5': hashlib.md5(plain).hexdigest(),
+                                  'filesize': len(cipher), 'no_need_thumb': True, 'aeskey': key.hex()})
+        except Failure as e:
+            e.phase = 'getuploadurl'
+            raise
         url = upload.get('upload_full_url', '').strip()
         if not url:
             if not upload.get('upload_param'):
-                raise Failure('missing_upload_url')
+                e = Failure('missing_upload_url')
+                e.phase = 'getuploadurl'
+                raise e
             url = CDN + '/upload?' + urllib.parse.urlencode({'encrypted_query_param': upload['upload_param'], 'filekey': filekey})
         attempts = 3 if retry else 1
         for attempt in range(attempts):
@@ -190,6 +200,7 @@ class Media:
                 break
             except Failure as e:
                 if 400 <= e.http < 500 or attempt == attempts - 1:
+                    e.phase = 'cdn_upload'
                     raise
                 continue
         media = {'encrypt_query_param': param, 'aes_key': base64.b64encode(key.hex().encode()).decode(), 'encrypt_type': 1}
@@ -198,7 +209,5 @@ class Media:
         elif typ == 5:
             outbound = {'type': 5, 'video_item': {'media': media, 'video_size': len(cipher)}}
         else:
-            name = item.get('file_item', {}).get('file_name') or 'echo.bin'
-            name = name.replace('\\', '/').split('/')[-1][:200] or 'echo.bin'
             outbound = {'type': 4, 'file_item': {'media': media, 'file_name': name, 'len': str(len(plain))}}
         return outbound

@@ -48,13 +48,30 @@ def method_of(rec: dict) -> tuple[str, str]:
     return m
 
 
-def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask: bool = False, *, limit: int = MAX_ITEMS) -> tuple[list[dict], list[dict]]:
+def document_name(rec: dict) -> str:
+    """Recover the verified type's suffix from an older record's truncated basename."""
+    name = rec["name"]
+    parts = rec.get("parts")
+    if len(name) != media_mod.NAME_MAX or not parts:
+        return name
+    original = parts[-1]
+    suffix = os.path.splitext(original)[1].lower()
+    if original[:media_mod.NAME_MAX] == name and media_mod.KINDS.get(suffix) == (rec.get("kind"), rec.get("mime")):
+        return media_mod.bounded_name(original)
+    return name
+
+
+def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask: bool = False, *, limit: int = MAX_ITEMS,
+            max_bytes: int | None = None, skip_paths=()) -> tuple[list[dict], list[dict]]:
     """Blocking owner attachment scan → records/skips. Run in a thread.
     With keys+mask, offer masked text copies and transient value-card pairs; credential files stay whole cards."""
     mask = mask and keys is not None
     items: list[dict] = []
     skips: list[dict] = []
     total, seen = 0, set()
+    options = {"max_bytes": max_bytes} if max_bytes is not None else {}
+    if skip_paths:
+        options["skip_paths"] = skip_paths
     if not media or not getattr(media, "workdir", None) or not text:
         return items, skips
     for ref in media_mod.refs(text):
@@ -66,13 +83,15 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask:
                 skips.append({"name": name, "why": "masked"})
             continue
         try:
-            rec, why = media.check(ref, owner=True, mask=True) if mask else media.check(ref, owner=True)
+            rec, why = media.check(ref, owner=True, mask=True, **options) if mask else media.check(ref, owner=True, **options)
         except OSError:
             rec, why = None, None
         values = media.last_values() if mask else []
         if why:
             skip = {"name": media_mod.owner_name(name, why, media.lang() if callable(getattr(media, "lang", None)) else "zh"), "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
                     **media_mod._at(media, why)}
+            if max_bytes is not None and why == "too_big" and rec and "max_bytes" in rec:
+                skip["max_bytes"] = rec["max_bytes"]
             skips.append(skip)
             if keys is not None and why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
                 keys.append((skip, rec))

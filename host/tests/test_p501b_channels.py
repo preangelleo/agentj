@@ -231,7 +231,8 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
                                      'item_list':[{'type':1,'text_item':{'text':'画猫'}}]},c.store.data['generation'])
             upload.assert_called_once();c.draw.assert_awaited_once()
             import json
-            self.assertEqual(json.loads(tr.calls[1][0][3])['msg']['item_list'][0]['type'],2)
+            sent = [json.loads(call[0][3])['msg']['item_list'][0] for call in tr.calls]
+            self.assertEqual([item['type'] for item in sent], [2, 1])
             self.host.agent.submit.assert_not_called()
             self.assertEqual(self.host.hist_add.call_args.args[0]['k'],'wechat','the exchange shows on the Web App page')
         finally:

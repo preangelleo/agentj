@@ -2063,12 +2063,6 @@ const asrWhy = (w) => { const k = 'p363.why.' + w, v = t(k); return v === k ? t(
 function asrBlock(a){
   const d = document.createElement("details"); d.className = "omasr"; d.open = true;
   const sm = document.createElement("summary"); sm.setAttribute('data-aj-owner', 'aj-source'); sm.textContent = t(a.ok ? 'p363.asrTitle' : 'p363.asrFailTitle');
-  if (a.ok && a.notice === 'local_fallback') {
-    const notice = document.createElement("span"); notice.className = "omasr-notice";
-    notice.textContent = t('asr440.local_fallback');
-    sm.style.flexWrap = "wrap"; notice.style.flexBasis = "100%"; notice.style.fontWeight = "normal";
-    sm.appendChild(notice);
-  }
   const p = document.createElement("p"); p.className = "omasr-text";
   p.textContent = a.ok ? a.text + (a.cut ? "\n" + t('p363.asrCut') : "") : t('p363.asrFail', {why: asrWhy(a.why)});
   d.append(sm, p);
@@ -3681,6 +3675,8 @@ function withdrawn(q){
 /** say_state from the host. */
 const early = new Map();  // P282: sid → taken / delivered that overtook its say_res (the Agent was idle), so it never shows as queued
 export function onSayState(m){
+  // A live attachment result arrives on the originating phone, never through history replay.
+  if (m.s === 'asr_route') { asrRouteNotice(m); return; }
   const q = queued.find(x => x.sid === m.sid);
   if (!q){
     if (m.s === "taken" || m.s === "delivered"){ early.set(m.sid, m.s); if (early.size > 32) early.delete(early.keys().next().value); }
@@ -4761,6 +4757,51 @@ function pttFinish(p, n, blob, secs){
 // A finished take, from the mic or from a native shell (relayNative.take): words into the field, or a long one into the tray.
 // P182: `p` (a mic take) carries its stored copy — dropped once the words are in the field, kept with the attachment.
 let asrQueue = Promise.resolve();
+let asrFallbackShown = false, dismissAsrFallback = null;
+// The current seat page's history entry keeps one bit through a reload.
+try { asrFallbackShown = history.state?.ajAsrFallback === true; } catch {}
+function rememberAsrFallback(shown){
+  asrFallbackShown = shown;
+  try {
+    const state = {...history.state};
+    if (shown) state.ajAsrFallback = true;
+    else {
+      if (!Object.hasOwn(state, 'ajAsrFallback')) return;
+      delete state.ajAsrFallback;
+    }
+    history.replaceState(state, '');
+  } catch {}
+}
+function resetAsrFallback(){
+  dismissAsrFallback?.();
+  dismissAsrFallback = null;
+  rememberAsrFallback(false);
+}
+function asrRouteNotice(result){
+  if (result.remote === true) { resetAsrFallback(); return; }
+  if (result.notice !== 'local_fallback' || asrFallbackShown || dismissAsrFallback) return;
+  const box = el('toast');
+  let content, observer, waitTimer;
+  const stopWaiting = () => { observer?.disconnect(); clearTimeout(waitTimer); };
+  dismissAsrFallback = () => {
+    stopWaiting();
+    if (content && box.firstElementChild === content) box.classList.remove('on');
+  };
+  const show = () => {
+    if (box.classList.contains('on')) return;
+    stopWaiting();
+    if (toast(t('asr440.local_fallback'), 3000) !== box) { dismissAsrFallback = null; return; }
+    content = box.firstElementChild;
+    box.style.setProperty('--nt-accent', 'var(--windstorm)');
+    rememberAsrFallback(true);
+  };
+  if (!box.classList.contains('on')) { show(); return; }
+  // Leave an action or active progress notice in place. A stale pending
+  // fallback may be skipped and the next actual fallback can try again.
+  observer = new MutationObserver(show);
+  observer.observe(box, {attributes: true, attributeFilter: ['class']});
+  waitTimer = setTimeout(() => { stopWaiting(); dismissAsrFallback = null; }, 3000);
+}
 async function takeFinished(blob, dur, p){
   const takeEpoch = p?.epoch ?? localEpoch;
   const forget = () => p?.takeP?.then(id => id && LR.dropTake(id));
@@ -4789,18 +4830,15 @@ async function takeFinished(blob, dur, p){
   intNote(p, "text");
   asrBusy++; asrUI();
   const ep = localEpoch;
-  el("asrNotice").hidden = true;
   const job = transcribe(blob, dur);
   asrQueue = asrQueue.then(() => job).then(async r => {
     asrBusy--;
     if (ep !== localEpoch || takeEpoch !== localEpoch){ asrUI(); return; }           // unpaired / removed meanwhile: the words belong to no one now
-    const notice = el("asrNotice");
-    notice.hidden = !['local_fallback', 'remote_unavailable'].includes(r.notice);
-    notice.textContent = notice.hidden ? '' : t('asr440.' + r.notice);
     const tx = r.ok && typeof r.text === "string" ? r.text.trim() : "";
     if (tx){ appendText(tx); forget(); }
     else toast(asrError(r), 3400);
-    if (p) gapNote(p, takeGaps(p, r.gaps));                          // P205: words in, but a stretch came in silent
+    if (p) gapNote(p, takeGaps(p, r.gaps));                      // P205: words in, but a stretch came in silent
+    if (tx) asrRouteNotice(r);
     asrUI(); autosize();
     if (tx && p?.autoSend) await say(true);
   });
@@ -5281,6 +5319,7 @@ let localEpoch = 0;
 export function forgetLocal(){
   forgetRefusals();
   localEpoch++;
+  resetAsrFallback();
   histMem = []; histAt = -1;
   forgetKill(); stash = null; hfind = null; fsed.forget();   // P412: the kill ring, Ctrl+S and the full-screen copy too
   clearTimeout(draftTimer); lastSent = null;

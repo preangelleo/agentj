@@ -48,8 +48,16 @@ class Usage(unittest.TestCase):
         self.assertEqual((self.root/'asr'/'last_used.json').stat().st_mode & 0o777, 0o600)
 
     def test_remote_failure_records_actual_fallback_model_and_total_time(self):
-        local=Mock(); local.transcribe.return_value={'ok': True, 'engine': 'sherpa', 'text': 'local'}
-        with patch('agentj.voice.cloud_asr', return_value={'ok': False}), patch('agentj.voice.time.monotonic', side_effect=[10., 10., 11., 12.]):
+        clock = [10.]
+        def remote(*args, **kwargs):
+            clock[0] = 11.
+            return {'ok': False}
+        def recover(*args, **kwargs):
+            clock[0] = 12.
+            return {'ok': True, 'engine': 'sherpa', 'text': 'local'}
+        local = Mock()
+        local.transcribe.side_effect = recover
+        with patch('agentj.voice.cloud_asr', side_effect=remote), patch('agentj.voice.time.monotonic', side_effect=lambda: clock[0]):
             voice.transcribe('/sample', config(), state_dir=self.root, local_asr=local)
         row=self.read()
         self.assertEqual((row['engine'], row['model'], row['fallback']), ('sherpa', asr.MODEL_ID, True))
@@ -111,7 +119,27 @@ class Usage(unittest.TestCase):
             list(pool.map(lambda i: asr_usage.record({'ok': True, 'engine': 'custom'}, state_dir=self.root, model=f'model-{i}', elapsed_ms=i, fallback=False), range(40)))
         row=self.read()
         self.assertEqual(row['model'], 'model-'+str(row['elapsed_ms']))
-        self.assertEqual([x.name for x in (self.root/'asr').iterdir()], ['last_used.json'])
+        directory = self.root / 'asr'
+        self.assertEqual({x.name for x in directory.iterdir()}, {'last_used.json', 'history.jsonl'})
+        history = [json.loads(line) for line in (directory / 'history.jsonl').read_text().splitlines()]
+        self.assertEqual({row['elapsed_ms'] for row in history}, set(range(40)))
+        self.assertEqual(len(history), 40)
+        self.assertEqual((directory / 'history.jsonl').stat().st_mode & 0o777, 0o600)
+
+    def test_bounded_history_retains_misses_and_preserves_legacy_latest_success(self):
+        from agentj import asr_usage
+        directory = self.root / 'asr'
+        directory.mkdir()
+        legacy = {'engine': 'custom', 'model': 'test', 'at': '2026-11-28T00:44:02.000000Z',
+                  'fallback': False, 'elapsed_ms': 77}
+        (directory / 'last_used.json').write_text(json.dumps(legacy))
+        for i in range(asr_usage.HISTORY_LIMIT + 3):
+            asr_usage.record({'ok': False, 'reason': 'timeout', 'remote_failure': 'timeout', 'remote_attempted': True},
+                             state_dir=self.root, model=None, elapsed_ms=i)
+        history = [json.loads(line) for line in (directory / 'history.jsonl').read_text().splitlines()]
+        self.assertEqual([row['elapsed_ms'] for row in history], list(range(3, asr_usage.HISTORY_LIMIT + 3)))
+        self.assertTrue(all(row['result'] == 'timeout' and row['engine'] == 'remote' for row in history))
+        self.assertEqual(self.read(), legacy)
 
     def test_status_rejects_endpoint_and_secret_shaped_model(self):
         for model in ('https://private.invalid/api?key=hidden', 'sk-'+'x'*40):

@@ -6012,14 +6012,19 @@ class Host:
                 else:
                     with provenance.task_request(task_scope):
                         broker = self.peers.xfer.broker if self.peers is not None and not background and task_scope is None else None
-                        ans = await broker.execute(tool, tool_input, m.get("tool_use_id"), gone.get(rid)) if broker else None
-                        # 0.30.6's host_turns.admit shortcut is absorbed by ADR-0307-offlist (list_approval → approval_offlist).
-                        if ans is None:
-                            # security r1 M1: a request on a permission connection that is no longer the main one never
-                            # borrows the main thread's current turn (typed unknown → reads only, no card).
-                            stale = not background and task_scope is None and self.perm_w is not w
-                            ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid), _harness_permission=True, _native_context=launch_context,
-                                                 **({"background": background} if background else {"background": "detached"} if stale else {}))
+                        stale = not background and task_scope is None and self.perm_w is not w
+                        roster = getattr(self.agent, "claude_children", None)
+                        from . import claude_children
+                        binding = (await roster.find(m.get("tool_use_id"), tool, tool_input)
+                                   if type(roster) is claude_children.Roster and not stale and not background and task_scope is None else None)
+                        stale = stale or (not background and task_scope is None
+                                          and (self.perm_w is not w or (type(roster) is claude_children.Roster and not roster.live())))
+                        with claude_children.scope(roster, binding):
+                            ans = (await broker.execute(tool, tool_input, m.get("tool_use_id"), gone.get(rid))
+                                   if broker and binding is None and not stale else None)
+                            if ans is None:
+                                ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid), _harness_permission=True, _native_context=launch_context,
+                                                     **({"background": background} if background else {"background": "detached"} if stale else {}))
         finally:
             gone.pop(rid, None)
             if side is not None or self.perm_w is w:
@@ -6054,7 +6059,12 @@ class Host:
 
         # Chairman 2026-11-08: main approval is explicit-list only. R-0049 S6: the
         # unreachable legacy engine that followed this return is deleted; rollback is git.
-        if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude":
+        from . import claude_children, host_turns
+        native = claude_children.request(self)
+        completion = (_harness_permission and background is None and avatar is None and _settings_context is None
+                      and host_turns.is_completion(self))
+        if (tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude"
+                and not completion and not (native and (native.notice is not None or native.launch is None))):
             return await self._ask_user_question(tool_input, gone)
         from . import list_approval, bounded_plan, policy_registry
         if tool == bounded_plan.TOOL and (not isinstance(_bounded_context, bounded_plan.SealedPlan)
@@ -8517,6 +8527,9 @@ class Host:
             if send.phone_binding is not None:
                 from . import upgrade_messages
                 upgrade_messages.bind_reply_page(self, send, turn)
+            else:
+                from . import privacy_host
+                privacy_host.bind_legacy_feedback(self, s, send)
         event_guard = getattr(s, "event_delivery_allowed", None)
         if callable(event_guard):  # host-only fixed subscription binding; external JSON cannot supply this callable
             send.delivery_allowed = event_guard
@@ -8764,9 +8777,26 @@ class Host:
                 self.hist_update(send.turn, att_asr=page_asr(files))
             with contextlib.suppress(Exception):           # P182: the latest recording group, for a later /会议总结 without files
                 meeting.remember(self.st, files)
+            route, order = None, 0
+            for f in voice:
+                transcript = f.get("asr") or {}
+                classified = self._asr_route(transcript)
+                if classified:
+                    route, order = classified, transcript.get("_asr_order", 0)
+            if route in ("local_fallback", "remote"):
+                self._post(self._say_asr_route, send, route, order)
         finally:
             if send.ready is not None and not send.ready.done():
                 send.ready.set_result(True)
+
+    async def _say_asr_route(self, send: compose.Send, route: str, order: int) -> None:
+
+        opposite = "remote" if route == "local_fallback" else "local_fallback"
+        latest = getattr(self, "asr_route_latest", {})
+        if send.state == "cancelled" or (order and latest.get(opposite, 0) > order):
+            return
+        signal = {"notice": "local_fallback"} if route == "local_fallback" else {"remote": True}
+        await self._send_device(send.device, {"t": "say_state", "sid": send.sid, "s": "asr_route", **signal})
 
     async def _transcribe_file(self, f: dict, budget: float, device: str, local_only: bool = False) -> dict:
         state = self.asr.ready_state(state_dir=self.st.root, engine_override=preferences.get(self.preferences, "voice.asr.engine")) if local_only else self.asr_state()
@@ -8785,7 +8815,7 @@ class Host:
         deadline = time.monotonic() + budget
         d = self.uploads.root / device
         d.mkdir(mode=0o700, parents=True, exist_ok=True)
-        texts, why, cut, notice = [], None, False, None
+        texts, why, cut, notice, route, order = [], None, False, None, None, 0
         for k in range(FF_MAX_SEGS + 1):
             left = deadline - time.monotonic()
             if k == FF_MAX_SEGS:
@@ -8810,6 +8840,9 @@ class Host:
                     os.unlink(tmp)
             res = self._asr_result(r, None)
             notice = res.get("notice") or notice
+            classified = self._asr_route(res)
+            if classified:
+                route, order = classified, res.get("_asr_order", 0)
             if res["ok"]:
                 texts.append(res["text"])
             elif res["why"] != "no_speech":
@@ -8818,7 +8851,11 @@ class Host:
             if size < 44 + FF_SEG_SECS * 32_000 - 64_000:          # shorter than a full segment: that was the last one
                 break
         if texts:
-            out = {"ok": True, "text": "\n".join(texts), "secs": f.get("secs"), **({"notice": notice} if notice else {})}
+            out = {"ok": True, "text": "\n".join(texts), "secs": f.get("secs")}
+            if notice:
+                out["notice"] = notice
+            if route:
+                out.update(asr_route=route, _asr_order=order)
             if why or cut:
                 out["partial"] = "cut" if cut else why
             return out
@@ -8840,10 +8877,31 @@ class Host:
                 tmp.unlink()
 
     @staticmethod
+    def _asr_route(result: dict) -> str | None:
+        if result.get("asr_route"):
+            return result["asr_route"]            # latest classified segment, separate from persistent notice
+        if result.get("notice") == "remote_unavailable":
+            return "remote_unavailable"
+        if result.get("ok") and (result.get("text") or "").strip():
+            if result.get("notice") == "local_fallback":
+                return "local_fallback"
+            if result.get("remote") is True:
+                return "remote"
+        return None
+
+    @staticmethod
     def _asr_result(r: dict, secs) -> dict:
+        route = {}
+        classified = Host._asr_route(r)
+        if classified in ("local_fallback", "remote_unavailable"):
+            route["notice"] = classified
+        elif classified == "remote":
+            route["remote"] = True
+        if r.get("_asr_order"):
+            route["_asr_order"] = r["_asr_order"]    # only prep_say consumes this; never serialized
         if r.get("ok") and (r.get("text") or "").strip():
-            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": secs, **({"notice": r["notice"]} if r.get("notice") in ("local_fallback", "remote_unavailable") else {})}
-        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": secs, **({"notice": r["notice"]} if r.get("notice") in ("local_fallback", "remote_unavailable") else {})}
+            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": secs, **route}
+        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": secs, **route}
 
     async def _ffmpeg(self, ff: str, demux: str, src: str, dst: str, timeout: float, start: float = 0,
                       secs: float = FF_MAX_SECS) -> str:
@@ -9020,23 +9078,43 @@ class Host:
         if self.asr_lock is None:
             self.asr_lock = asyncio.Lock()
         async with self.asr_lock:
+            cancelled = threading.Event()    # cancelling to_thread does not stop the in-flight Python call
             try:
                 from . import voice
                 if not local_only:
                     r = await asyncio.wait_for(asyncio.to_thread(voice.transcribe, path, self.preferences, timeout,
-                                                                         state_dir=self.st.root, local_asr=self.asr), timeout + 5)
+                                                                         state_dir=self.st.root, local_asr=self.asr,
+                                                                         cancelled=cancelled), timeout + 5)
                 else:
                     r = await asyncio.wait_for(asyncio.to_thread(self.asr.transcribe, path, timeout_s=timeout,
                                                                         state_dir=self.st.root, engine_override=preferences.get(self.preferences, "voice.asr.engine")), timeout + 5)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
             except asyncio.TimeoutError:
-                return {"ok": False, "reason": "timeout"}
+                cancelled.set()
+                return {"ok": False, "reason": "timeout", "route_unknown": True}
             except Exception:  # noqa: BLE001
-                return {"ok": False, "reason": "engine_failed"}
-        return r if isinstance(r, dict) else {"ok": False, "reason": "engine_failed"}
+                return {"ok": False, "reason": "engine_failed", "route_unknown": True}
+            if not isinstance(r, dict):
+                return {"ok": False, "reason": "engine_failed", "route_unknown": True}
+            route = self._asr_route(r)
+            if route in ("remote", "local_fallback"):
+                # This lock orders actual results, even when another send is still converting its next segment.
+                latest = getattr(self, "asr_route_latest", None)
+                if latest is None:
+                    latest = self.asr_route_latest = {}
+                order = max(latest.values(), default=0) + 1
+                latest[route] = order
+                r = {**r, "_asr_order": order}
+            return r
 
     async def _asr_take(self, device: str, b) -> None:
 
+        from . import asr_usage
+
         res = {"t": "asr_res", "bid": b.bid}
+        diagnostics = {}
         try:
             state = self.asr_state()
             if state != "ready":
@@ -9047,22 +9125,28 @@ class Host:
                 res.update(ok=False, why="bad_audio")
             else:
                 self.asr_waiting[device] = self.asr_waiting.get(device, 0) + 1
+                started = time.monotonic()
                 try:
                     r = await self._transcribe(str(self.uploads.part_path(b)), min(ASR_TAKE, compose.asr_budget(b.secs)))
                 finally:
                     self.asr_waiting[device] -= 1
-                if r.get("notice") in ("local_fallback", "remote_unavailable"):
-                    res["notice"] = r["notice"]
-                text = wire.well_formed(r.get("text") or "") if r.get("ok") else ""
-                if r.get("ok") and text.strip():
+                if not r.get("route_unknown"):
+                    diagnostics = asr_usage.fields(r, elapsed_ms=(time.monotonic() - started) * 1000)
+                    diagnostics.pop("result")   # retain the pre-existing phone-visible result vocabulary
+                routed = self._asr_result(r, None)
+                for field in ("notice", "remote"):
+                    if field in routed:
+                        res[field] = routed[field]
+                text = routed.get("text", "")
+                if routed["ok"]:
                     cut = history._cut_units(text, wire.MAX_TEXT_P33)
                     res.update(ok=True, text=text[:cut], engine=str(r.get("engine") or "")[:16],
                                ms=int(r.get("ms") or 0) if isinstance(r.get("ms"), (int, float)) else 0)
                 else:
-                    res.update(ok=False, why="no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"))
+                    res.update(ok=False, why=routed["why"])
         finally:
             self.uploads.asr_done(b)
-        self.st.log("asr", device=device, result="ok" if res.get("ok") else res.get("why"))
+        self.st.log("asr", device=device, result="ok" if res.get("ok") else res.get("why"), **diagnostics)
         await self._send_device(device, res)
 
     # ------------------------------------------------------------ meters (§10.10)

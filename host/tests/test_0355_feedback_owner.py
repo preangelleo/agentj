@@ -18,7 +18,7 @@ from test_feedback import DRAFT
 from test_inline_media_stream import PNG
 from test_l1 import Phone, _host, _ready, _state
 
-from agentj import approval_material, compose, privacy, provenance, shared, shared_turn_origin, support
+from agentj import application_ingress, approval_material, compose, privacy, privacy_host, provenance, shared, shared_turn_origin, support
 from agentj.browser_login import RequestPhone
 from agentj.peer_origin import _stat
 
@@ -128,7 +128,7 @@ class SharedFeedback(unittest.IsolatedAsyncioTestCase):
             await self.host._app(self.remote, {"t": "say", "sid": secrets.token_urlsafe(16),
                                              "text": "Please send my diagnostic feedback.", "ts": 0})
 
-    def native_record(self, *, record_id=True):
+    def native_record(self, *, record_id=True, prompt_id=None, session_id=None):
         att = self.agent.native_request
         item = {"type": "user", "sessionId": att.session_id, "isMeta": True, "uuid": secrets.token_hex(16),
                 "timestamp": datetime.now(timezone.utc).isoformat(), "origin": {"kind": "peer"},
@@ -136,6 +136,10 @@ class SharedFeedback(unittest.IsolatedAsyncioTestCase):
                                                                            att.body, att.source)}}
         if record_id:
             item["origin"]["msg_id"] = att.record_id
+        if prompt_id is not None:
+            item["promptId"] = prompt_id
+        if session_id is not None:
+            item["sessionId"] = session_id
         with self.agent.transcript.open("a") as out:
             out.write(json.dumps(item) + "\n")
 
@@ -146,6 +150,60 @@ class SharedFeedback(unittest.IsolatedAsyncioTestCase):
 
     async def command(self, *argv):
         return await self.native_exec(argv)
+
+    def pending_prompt(self, prompt_id="synthetic-prompt"):
+        att = self.agent.native_request
+        body = provenance.envelope(self.agent.session["messagingSocketPath"], att.body, att.source)
+        return shared_turn_origin.phone_prompt(self.agent, {"session_id": self.agent.session["sessionId"],
+                                                          "prompt_id": prompt_id, "prompt": body})
+
+    async def test_exact_phone_attestation_removes_only_its_provisional_span(self):
+        await self.begin()
+        application_ingress.open_span(self.host, native=True)
+        application_ingress.close_span(self.host)
+        spans = self.host._nonowner_spans
+        prior = spans[0]
+        application_ingress.open_span(self.host, native=True, pending_phone_prompt=self.pending_prompt())
+        self.assertEqual(len(spans), 2)
+        self.native_record(prompt_id="synthetic-prompt")
+        self.agent.read_transcript()
+        self.assertTrue(self.agent.phone_seen)
+        self.assertEqual(self.agent.native_request.attested_prompt, "synthetic-prompt")
+        self.assertEqual(spans, [prior])
+        self.assertIs(spans[0], prior)
+
+    async def test_shared_phone_attestation_cannot_remove_foreign_or_mismatched_span(self):
+        for scenario in ("prior", "observed_foreign", "different_prompt", "different_session", "different_send", "nonce_missing"):
+            with self.subTest(scenario=scenario):
+                application_ingress.close_span(self.host)
+                await self.begin()
+                if scenario == "prior":
+                    application_ingress.open_span(self.host, native=True)
+                application_ingress.open_span(self.host, native=True, pending_phone_prompt=self.pending_prompt())
+                foreign = self.host._nonowner_spans[-1]
+                if scenario == "observed_foreign":
+                    application_ingress.open_span(self.host, native=True)
+                self.native_record(
+                    record_id=scenario != "nonce_missing",
+                    prompt_id="other-prompt" if scenario == "different_prompt" else "synthetic-prompt",
+                    session_id="other-session" if scenario == "different_session" else None)
+                if scenario == "different_send":
+                    self.agent.cur_send = compose.Send(self.remote.device, "different-send", 999)
+                self.agent.read_transcript()
+                self.assertIs(self.host._nonowner_spans[-1], foreign)
+                self.assertIsNone(foreign[1])
+
+    async def test_proactive_hook_reusing_attested_prompt_opens_a_guest_span(self):
+        await self.begin()
+        self.native_record(prompt_id="same-native-id")
+        self.agent.read_transcript()
+        self.assertEqual(self.agent.native_request.attested_prompt, "same-native-id")
+        event = {"session_id": self.agent.session["sessionId"], "prompt_id": "same-native-id",
+                 "hook_event_name": "UserPromptSubmit", "prompt": "<task-notification>foreign</task-notification>"}
+        self.assertIsNone(shared_turn_origin.phone_prompt(self.agent, event))
+        await self.agent.hook_event(event)
+        self.assertIsNone(self.host._nonowner_spans[-1][1])
+        self.assertNotIn("_pending_phone_span", self.host.__dict__)
 
     async def test_paired_shared_feedback_waits_for_exact_native_delivery(self):
         await self.begin()
@@ -183,6 +241,66 @@ class SharedFeedback(unittest.IsolatedAsyncioTestCase):
         self.assertIn(self.ticket, output)
         self.assertEqual(len(self.posts), 1)
 
+    def use_browser_without_approval_key(self):
+        self.phone = Phone(self.st, with_key=False)
+        self.remote = _ready(self.host, self.phone, cid=12)
+        self.remote.p33 = True
+        self.assertIsNone(RequestPhone.from_session(self.host, self.remote))
+
+    async def test_no_approval_key_can_submit_feedback_on_original_pairing(self):
+        self.use_browser_without_approval_key()
+        await self.begin()
+        self.native_record()
+        self.assertFalse(approval_material.feedback_pairing_live(self.host, self.agent.cur_send))
+        self.assertTrue(privacy_host._feedback_pairing_live(self.host, self.agent.cur_send))
+        exit_code, output, _ = await self.command("feedback", "check", str(self.draft))
+        self.assertEqual(exit_code, support.EXIT_UNAVAILABLE, output)
+        self.assertIn("peer_unverified", output)
+        self.assertEqual(self.reviews, [])
+        self.assertEqual(self.posts, [])
+        with patch.object(support.cloud, "read_cloud", return_value={"fixture": True}):
+            exit_code, output, _ = await self.command("feedback", "send", str(self.root / "draft.checked.json"))
+        self.assertEqual(exit_code, support.EXIT_PENDING, output)
+        self.assertIn(self.ticket, output)
+        self.assertEqual(len(self.posts), 1)
+
+    async def test_no_claimed_key_cannot_fall_back_when_pair_has_one(self):
+        for session_key in (b"", os.urandom(32)):
+            with self.subTest(omitted=not session_key):
+                self.remote.sign_pub = session_key
+                self.remote.login_phone = RequestPhone.from_session(self.host, self.remote)
+                self.assertIsNone(self.remote.login_phone)
+                await self.begin()
+                self.native_record()
+                exit_code, output, _ = await self.command("support", "feedback", "Synthetic owner report", "--wait", "0")
+                self.assertEqual(exit_code, support.EXIT_UNAVAILABLE, output)
+                self.assertIn("peer_unverified", output)
+        self.assertEqual(self.reviews, [])
+        self.assertEqual(self.posts, [])
+
+    async def test_legacy_pairing_cannot_outlive_pairing_state(self):
+        for mutation in ("revoked", "repaired", "sign_registered", "malformed_sign_key"):
+            with self.subTest(mutation=mutation):
+                self.use_browser_without_approval_key()
+                await self.begin()
+                send = self.agent.cur_send
+                self.assertTrue(privacy_host._feedback_pairing_live(self.host, send))
+                if mutation == "revoked":
+                    self.assertTrue(self.st.remove_device(self.phone.did))
+                elif mutation == "repaired":
+                    self.st.pair_device(self.phone.pub, "Synthetic repaired remote")
+                elif mutation == "sign_registered":
+                    self.assertTrue(self.st.set_sign_key_if_absent(self.phone.pub, os.urandom(32)))
+                else:
+                    records = self.st.devices()
+                    records[self.phone.did]["sk"] = "malformed"
+                    self.st.devices_path.write_text(json.dumps(records))
+                self.assertFalse(privacy_host._feedback_pairing_live(self.host, send))
+
+    async def test_new_legacy_pairing_revision_during_privacy_review_cannot_send(self):
+        self.use_browser_without_approval_key()
+        await self.review_across_source_change("repaired")
+
     async def test_revocation_during_privacy_review_cannot_send(self):
         await self.review_across_source_change("revoked")
 
@@ -205,6 +323,8 @@ class SharedFeedback(unittest.IsolatedAsyncioTestCase):
                 if scenario == "revoked":
                     revoked, _ = await self.host.revoke(self.remote.device)
                     self.assertTrue(revoked)
+                elif scenario == "repaired":
+                    self.st.pair_device(self.phone.pub, "Synthetic repaired remote")
                 else:
                     await self.begin()
             finally:

@@ -223,7 +223,9 @@ class WeChatOwner(_Owner):
                 await asyncio.gather(*list(c.card_tasks))
             self.assertEqual(upload.call_args.args[1], {'type': 4, 'file_item': {'file_name': 'report.pdf'}})
             self.assertEqual(upload.call_args.args[2], PDF)
-            self.assertEqual(json.loads(tr.calls[0][0][3])['msg']['item_list'][0]['text_item']['text'], '做好了')
+            sent = [json.loads(call[0][3])['msg']['item_list'][0] for call in tr.calls]
+            self.assertEqual([item['type'] for item in sent], [4, 1])
+            self.assertEqual(sent[1]['text_item']['text'], '做好了')
             c.open_card.assert_not_called(); c.model.assert_not_awaited()
         finally:
             c.closed = True; c.store.close()

@@ -4,6 +4,7 @@ import _hermetic  # noqa: F401
 import argparse
 import io
 import json
+import lzma
 import os
 import tempfile
 import unittest
@@ -44,6 +45,23 @@ class News(unittest.TestCase):
     def test_default_is_the_installed_version(self):
         with patch.object(news_notes, "installed", return_value="0.26.9"):
             self.assertTrue(news_notes.load(None, FIX)["ok"])
+
+    def test_history_preserves_rendering_and_current_file_takes_precedence(self):
+        fixture = FIX / "0.26.9.json"
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as td:
+            base = Path(td)
+            history = base / "history.json.xz"
+            history.write_bytes(lzma.compress(json.dumps({"0.26.9": json.loads(fixture.read_bytes())}).encode()))
+            self.assertEqual(news_notes.load("0.26.9", base), news_notes.load("0.26.9", FIX))
+            self.assertEqual(news_notes.load("9.9.9", base)["why"], "missing")
+            note = base / fixture.name
+            note.write_text("broken")
+            self.assertEqual(news_notes.load("0.26.9", base)["why"], "unreadable")
+            note.unlink()
+            history.write_bytes(b"broken archive")
+            self.assertEqual(news_notes.load("0.26.9", base)["why"], "unreadable")
+            history.write_bytes(lzma.compress(b" " * (news_notes.MAX_BYTES + 1)))
+            self.assertEqual(news_notes.load("0.26.9", base)["why"], "unreadable")
 
     def test_cli_routes_without_init_or_network(self):
         a = argparse.Namespace(mode="status", args=[], json=False, release="0.26.9")

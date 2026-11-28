@@ -667,7 +667,7 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
         if (st.asrWhy) return sendApp(c, { t: 'asr_res', bid: m.bid, ok: false, why: st.asrWhy });
         const text = st.asrTexts.length ? st.asrTexts.shift() : st.asrText;
         const delay = st.asrDelays.length ? st.asrDelays.shift() : 0;
-        setTimeout(() => sendApp(c, { t: 'asr_res', bid: m.bid, ok: true, text, engine: 'sherpa', ms: 40, notice: st.asrNotice }).catch(() => {}), delay);
+        setTimeout(() => sendApp(c, { t: 'asr_res', bid: m.bid, ok: true, text, engine: 'sherpa', ms: 40, notice: st.asrNotice, ...(st.asrRemote ? { remote: true } : {}) }).catch(() => {}), delay);
         return;
       }
       st.staged.add(m.bid);

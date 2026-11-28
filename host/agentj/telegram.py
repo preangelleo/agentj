@@ -157,7 +157,8 @@ def upload(cfg,method,fields,field,name,mime,data,timeout=120):
     key=os.environ.get(cfg['key_env'])
     if not key:raise ValueError('missing bot key')
     boundary='agentj'+uuid.uuid4().hex
-    safe=re.sub(r'[\x00-\x1f"\\]','_',name)[:128] or 'file'
+    from .media import bounded_name
+    safe=bounded_name(re.sub(r'[\x00-\x1f\x7f"\\/]','_',name)) or 'file'
     body=bytearray()
     for k,v in fields.items():
         body+=('--'+boundary+'\r\nContent-Disposition: form-data; name="'+k+'"\r\n\r\n'+str(v)+'\r\n').encode()
@@ -357,7 +358,8 @@ class Telegram:
             upload_at=time.monotonic()
             if configuration(self.host.st)!=cfg or not self.enabled():return {'ok':False,'why':'not_configured'}
             # An explicit file-card action always sends the original as a document, once.
-            await asyncio.to_thread(upload,cfg,'sendDocument',{'chat_id':cfg['owner_id']},'document',rec['name'],rec['mime'],data)
+            name=tg_media.document_name(rec)
+            await asyncio.to_thread(upload,cfg,'sendDocument',{'chat_id':cfg['owner_id']},'document',name,rec['mime'],data)
             self.host.st.log('telegram_forward_stage',device=device,kind='file',phase='upload',ms=int((time.monotonic()-upload_at)*1000))
             self.fwd_sent={k:v for k,v in self.fwd_sent.items() if now-v<FWD_REPEAT};self.fwd_sent[key]=time.monotonic()
             self.host.st.log('telegram_forward',device=device,kind='file',result='ok',bytes=rec['bytes'],ms=int((time.monotonic()-now)*1000))

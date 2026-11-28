@@ -205,7 +205,7 @@ SPAN_MARGIN = 0.05     # seconds; widens every non-owner span (clock granularity
 SPAN_KEEP = 256
 
 
-def open_span(host, native=False):
+def open_span(host, native=False, *, pending_phone_prompt=None):
     """A non-owner turn (friend / visitor / group / external channel / webhook / harness turn on foreign content) began:
     every process born from now until it ends is guest-born and can never get the owner_local frame.
     native=True (security r4 N5): the host only notices a harness-started turn after the fact, so the span starts at
@@ -214,14 +214,28 @@ def open_span(host, native=False):
     from . import approval_material
     approval_material.clock_check(host)                 # R-0052 r2: span times share the macOS continuity reference
     spans = host.__dict__.setdefault('_nonowner_spans', [])
+    host.__dict__.pop('_pending_phone_span', None)  # another guest observation leaves any open span intact
     if not spans or spans[-1][1] is not None:
         start = now()
         if native:
             start = min(start, host.__dict__.get('_span_closed_at') or host.__dict__.get('_nonowner_floor') or start)   # r4b note 1
-        spans.append([start, None])
+        span = [start, None]
+        spans.append(span)
+        if pending_phone_prompt is not None:
+            host._pending_phone_span = (span, *pending_phone_prompt)
     while len(spans) > SPAN_KEEP:                      # forgotten history only ever refuses more
         dropped = spans.pop(0)
         host.__dict__['_nonowner_floor'] = max(host.__dict__.get('_nonowner_floor') or 0.0, dropped[1] or now())
+
+
+def attest_phone_span(host, attestation, prompt_id):
+    """Retract only the provisional span created by this exact native prompt."""
+    pending = host.__dict__.get('_pending_phone_span')
+    spans = host.__dict__.get('_nonowner_spans') or []
+    if (pending and spans and spans[-1] is pending[0] and spans[-1][1] is None
+            and pending[1] is attestation and pending[2] == prompt_id):
+        spans.pop()
+        host.__dict__.pop('_pending_phone_span', None)
 
 
 def close_span(host):
@@ -229,6 +243,7 @@ def close_span(host):
     from . import approval_material
     approval_material.clock_check(host)
     spans = host.__dict__.get('_nonowner_spans') or []
+    host.__dict__.pop('_pending_phone_span', None)
     t = now()
     if spans and spans[-1][1] is None:
         spans[-1][1] = t

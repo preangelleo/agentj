@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from . import media, owner_call, privacy, provenance, history
+from .wechat_filename import file_name
 
 
 def request(path, label='', cwd=None, *, delivery=None):
@@ -83,6 +84,10 @@ SEND_FAILURE_HINTS = {
     'native_admission_request_mismatch': '请核对这次微信文件发送命令里的路径与获准命令是否一致。',
     'binding_changed': '原来的微信连接或消息已失效。请确认微信已绑定，再在私聊中发一条新消息。 / The original WeChat binding or message is no longer active. Check the binding, then send a new private message.',
     'needs_message': '微信没有接受这次发送。请在已绑定的微信私聊中发一条新消息。 / WeChat declined the send. Send a new message in your bound private chat.',
+    'type': '文件类型不支持，或后缀与内容不符。 / The file type is unsupported or its content does not match its extension.',
+    'invalid_file_name': '文件名含微信无法安全接收的字符。 / This filename contains characters that cannot safely be sent to WeChat.',
+    'provider_too_large': '微信服务拒绝了这个附件的大小。 / WeChat rejected this attachment because of its size.',
+    'send_failed': '微信附件发送未获确认，请查看回执中的 delivery_unknown。 / WeChat did not confirm the file. Check delivery_unknown before retrying.',
 }
 
 WECHAT_FILE_HINTS = {
@@ -109,6 +114,55 @@ def source_refusal(host, req, source, send, binding):
 
 def failure(why):
     return {'result': 'failure', 'why': why, 'client_downloaded': False}
+
+
+def size_failure(max_bytes, *, scope='file'):
+    limit = max_bytes // media.MIB
+    if scope == 'page':
+        hint = f'当前页文件合计上限为 {limit} MiB，文件未发送。 Page attachment total limit: {limit} MiB. The file was not sent.'
+    else:
+        hint = f'微信对此类文件的发送上限为 {limit} MiB，文件未发送。 WeChat limit for this file type: {limit} MiB. The file was not sent.'
+    return {**failure('too_big'), 'max_bytes': max_bytes,
+            'scope': scope, 'hint': hint}
+
+
+def request_path(req):
+    return os.path.abspath(os.path.join(req['cwd'], os.path.expanduser(req['path'])))
+
+
+def _request_ref(req, root):
+    path = req.get('path')
+    label = req.get('label', '')
+    if not isinstance(path, str) or not path or len(path) > media.REF_MAX or not isinstance(label, str) or len(label) > 128:
+        return None, 'shape'
+    raw = request_path(req)
+    # The native call's configured project is the ceiling, not a caller-chosen root.
+    if not media._inside(raw, os.path.realpath(root)) or os.path.realpath(raw) != raw:
+        return None, 'outside'
+    shown = privacy.owner_text(raw).replace('>', '%3E').replace('<', '%3C')
+    return media.Ref('<' + shown + '>', raw, True), None
+
+
+def send_preflight(host, req, root):
+    """After native admission, reject local size/type/name before issuing a pending ticket."""
+    from .wechat_protocol import Failure, MAX_MEDIA
+    try:
+        ref, why = _request_ref(req, root)
+        if why:
+            return None                              # other refusals retain the full completion path
+        rec, why = host.media.check(ref, owner=True, root=root, preflight=True, max_bytes=MAX_MEDIA)
+        if why == 'too_big':
+            return size_failure(rec['max_bytes'])
+        if why == 'type':
+            return failure(why)
+        if why or not rec:
+            return None
+        file_name(rec['name'])
+    except Failure as exc:
+        return failure(exc.code)
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def generated_image_hint(host, root, path):
@@ -151,20 +205,21 @@ async def attach(host, req, check, admitted_root=None, delivery_binding=None):
         return None
     if why := refusal():
         return failure(why)
-    path = req.get('path')
     label = req.get('label', '')
-    if not isinstance(path, str) or not path or len(path) > media.REF_MAX or not isinstance(label, str) or len(label) > 128:
-        return failure('shape')
-    raw = os.path.abspath(os.path.join(req['cwd'], os.path.expanduser(path)))
-    # The native call's configured project is the ceiling, not a caller-chosen root.
-    if not media._inside(raw, os.path.realpath(root)) or os.path.realpath(raw) != raw:
-        return failure('outside')
-    shown = privacy.owner_text(raw).replace('>', '%3E').replace('<', '%3C')
-    ref = media.Ref('<' + shown + '>', raw, True)
+    ref, why = _request_ref(req, root)
+    if why:
+        return failure(why)
+    to_wechat = req.get('delivery') == 'wechat'
     def prepare():
-        rec, why = host.media.check(ref, owner=True, root=root, mask=False)
+        from .wechat_protocol import MAX_MEDIA, Failure
+        rec, why = host.media.check(ref, owner=True, root=root, mask=False, max_bytes=MAX_MEDIA if to_wechat else None)
         if why or not rec:
-            return None, why or 'gone'
+            return rec, why or 'gone'
+        if to_wechat:
+            try:
+                file_name(rec['parts'][-1])
+            except Failure as exc:
+                return None, exc.code
         host.media._persist(rec)
         return rec, None
     try:
@@ -177,24 +232,25 @@ async def attach(host, req, check, admitted_root=None, delivery_binding=None):
             return failure(why_now)
         return failure('expired')
     if why:
+        if to_wechat and why == 'too_big':
+            return size_failure(rec['max_bytes'])
         return failure(why)
     existing = {item['mid']: item for pid in ids for item in (host.hist.get(pid) or {}).get('media', [])}
     retained = [item for item in existing.values() if item.get('ref') != rec['ref']]
     if len(retained) >= media.MAX_ITEMS:
         return failure('too_many')
     if sum(item.get('bytes', 0) for item in retained) + rec['bytes'] > media.PAGE_BYTES:
-        return failure('too_big')
+        return size_failure(media.PAGE_BYTES, scope='page') if to_wechat else failure('too_big')
     with host.media.lock:
         old = next(((mid, r) for mid, r in host.media.table.items() if r.get('page') == owner_page
                     and r.get('ref') == rec['ref'] and r.get('sha256') == rec['sha256']), None)
     item = ({'mid': old[0], **{k: rec[k] for k in ('name', 'mime', 'kind', 'bytes', 'sha256', 'ref')}}
             if old else host.media.register(rec, owner_page))
-    if req.get('delivery') == 'wechat':
+    if to_wechat:
         from . import wechat_forward
         return await wechat_forward.send_file(host, item, delivery_binding, valid=lambda: refusal() is None)
     name = privacy.owner_text(label or rec['name'])[:128].replace('[', '').replace(']', '').replace('\n', ' ')
-    shown = privacy.owner_text(raw).replace('>', '%3E').replace('<', '%3C')
-    link = f'[{name}](<{shown}>)'
+    link = f'[{name}]({ref.text})'
     room = history.PART_MAX - history._units(page['reply']['text'] + history.SEP)
     if room < history._units(link):
         link = '\n' * max(room, 0) + link

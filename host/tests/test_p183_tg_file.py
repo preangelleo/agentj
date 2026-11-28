@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent)); sys.path.insert(0, str(HERE))
-from agentj import media as media_mod, tg_media  # noqa: E402
+from agentj import media as media_mod, telegram as tg, tg_media, wire  # noqa: E402
 from test_p118_telegram import _Base, OWNER  # noqa: E402
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 64
@@ -43,6 +43,39 @@ class FileForward(_Base):
         self.assertEqual((await self.t.forward_media(self.mids['chart.png'], 'dev1'))['why'], 'recently_sent')
         log = self.st.log_path.read_text()
         self.assertIn('telegram_forward', log); self.assertNotIn('chart.png', log); self.assertNotIn(str(self.work), log)
+
+    async def test_long_document_keeps_suffix_in_card_and_telegram(self):
+        name = "Quarterly Report " + "a" * 150 + ".PDF"
+        expected = name[:124] + ".PDF"
+        data = b"%PDF-1.7\nSynthetic file"
+        (self.work / "out" / name).write_bytes(data)
+        reply = f"[Report](<out/{name}>)"
+        items, skips = self.host.media.scan(reply, 8)
+        self.assertEqual(skips, [])
+        item, = items
+        self.assertEqual(item["name"], expected)
+        self.assertEqual(wire.units(item["name"]), 128)
+
+        await self.t.send_media(self.cfg, reply)
+        # An already persisted card may still have the old clipped display name.
+        self.host.media.table[item["mid"]]["name"] = name[:128]
+        self.assertEqual(await self.t.forward_media(item["mid"], "dev5"), {"ok": True})
+        docs = [call["files"]["document"] for call in self.bot.sent("sendDocument")]
+        self.assertEqual([(doc["filename"], doc["mime"], doc["data"]) for doc in docs],
+                         [(expected, "application/pdf", data)] * 2)
+
+    async def test_multipart_sanitizes_before_clipping_the_stem(self):
+        name = "a" * 128 + '\r\n"\\/.pdf'
+        await asyncio.to_thread(tg.upload, self.cfg, "sendDocument", {"chat_id": OWNER},
+                                "document", name, "application/pdf", b"%PDF-1.7\nFixture")
+        doc, = self.bot.sent("sendDocument")
+        self.assertEqual(doc["files"]["document"]["filename"], "a" * 124 + ".pdf")
+
+    def test_card_length_counts_utf16_units_and_keeps_pairs(self):
+        name = "中" * 123 + "😀资料" + ".PDF"
+        expected = "中" * 123 + ".PDF"
+        self.assertEqual(media_mod.bounded_name(name), expected)
+        self.assertEqual(wire.units(expected), 127)
 
     async def test_changed_unknown_too_big_and_switched_off(self):
         (self.work / 'out' / 'notes.md').write_text('# 改过了\n')

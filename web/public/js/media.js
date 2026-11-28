@@ -28,7 +28,7 @@ import { renderDoc } from './preview.js';
 import { glyph } from './icons.js';
 import { unb64u } from '../proto/wire.js';
 
-import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, internalMediaRef, matchSlot, placeSlots, blobType, autoLoad, previewKind, codeLang, PREVIEW } from './mediawire.js';
+import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, internalMediaRef, matchSlot, placeSlots, blobType, autoLoad, previewKind, codeLang, PREVIEW, fileNameParts } from './mediawire.js';
 export { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType };
 const STALL_MS = 20000;
 const PARALLEL = 2;                          // fetches at once (the computer allows 3 per session)
@@ -360,7 +360,11 @@ function card(m, inline, sc) {
   const foot = mk('div', 'mfoot');
   const meta = mk('div', 'mmeta');
   const icon = glyph('file', 'mico');
-  meta.append(icon, mk('span', 'mname', m.name), mk('span', 'msize', human(m.bytes)));
+  const [stem, suffix] = fileNameParts(m.name);
+  const name = mk('span', 'mname');
+  name.append(mk('span', 'mname-stem', stem));
+  if (suffix) name.append(mk('span', 'mname-suffix', suffix));
+  meta.append(icon, name, mk('span', 'msize', human(m.bytes)));
   const acts = mk('div', 'macts', undefined, 'aj-file'); acts.setAttribute('role', 'toolbar'); acts.setAttribute('aria-label', m.name);
   const bPv = iconBtn('pv', 'preview', t(m.kind === 'audio' ? 'media.act.preview' : 'media.act.fullscreen'));
   // 0.26.9 #453: icon only (the chairman: 「那个icon就已经画的很明显了」) — the words stay its aria-label / title

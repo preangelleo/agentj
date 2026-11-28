@@ -323,7 +323,7 @@ class SharedSessionSpans(unittest.TestCase):
         for i in decided:
             if i in resets:
                 continue
-            self.assertIn('application_ingress_span(self)', lines[i + 1], f'shared.py line {i + 1}: {lines[i].strip()}')
+            self.assertRegex(lines[i + 1], r'application_ingress_span\(self(?:\)|,)', f'shared.py line {i + 1}: {lines[i].strip()}')
 
     def test_peer_origin_or_envelope_prompt_is_not_owner(self):
         from agentj import provenance, shared

@@ -879,7 +879,8 @@ class State:
 
     # ------------------------------------------------------------ metadata log (never message text)
     # report_* events (PROTOCOL §7) carry only seq / status class / trigger — never labels, codes or URLs
-    LOG_FIELDS = {"why", "exception_type", "http_status", "channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
+    LOG_FIELDS = {"why", "exception_type", "http_status", "engine", "fallback", "elapsed_ms", "remote_failure",
+                  "retry_failure", "retried", "channel", "cid", "device", "name", "reason", "kind", "bytes", "code_ok", "seq", "status", "trigger",
                   "tenant", "request", "result", "ms", "id", "tool", "agent", "decision", "locked", "fence", "change", "action",
                   "session_mode", "isolation_requested", "isolation_effective", "phase", "version", "language", "core_sha256", "prompt_sha256", "mechanism", "working_root_sha256", "identity_session",
                   "generation", "model", "effort", "layers", "identity",

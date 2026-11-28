@@ -91,6 +91,16 @@ test('wire sanitiser: kinds, ids, caps, base names; snap.toPage carries media / 
   assert.equal(M.blobType({ mime: 'video/quicktime' }), 'video/mp4');
 });
 
+test('long media names keep their extension without cutting a surrogate pair', () => {
+  const stem = 'a'.repeat(122);
+  const name = 'dir/' + stem + '📄年度演示.pptx';
+  const item = { mid: mid('a'), name, mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    kind: 'file', bytes: 12, sha256: sha, ref: name };
+  const p = toPage({ id: 4, reply: { text: '' }, media: [item], media_skip: [{ name, why: 'too_big' }] });
+  assert.equal(p.media[0].name, stem + '.pptx');
+  assert.equal(p.mediaSkip[0].name, stem + '.pptx');
+});
+
 test('HTML preview frame: an EMPTY sandbox, no referrer, a CSP that allows no network at all', () => {
   const a = M.sandboxAttrs();
   assert.equal(a.sandbox, '', 'sandbox="" — no allow-scripts / same-origin / forms / popups');

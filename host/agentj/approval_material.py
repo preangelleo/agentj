@@ -775,6 +775,10 @@ async def observe_phone_delivery(host, peer):
 
 def verified_phone_chat(host, peer):
     """Only a live chat descendant of the exact host-recorded phone Send can carry this proof."""
+    return _verified_phone_chat(host, peer, feedback_pairing_live)
+
+
+def _verified_phone_chat(host, peer, pairing_live):
     scope = _direct_scope(host, peer, secret_input=True)
     if scope is None or scope['kind'] != 'agent' or not _scope_live(host, scope, peer):
         return None
@@ -787,7 +791,7 @@ def verified_phone_chat(host, peer):
             or origin.get('message_id') != turn or str(origin.get('session')) != str(host.hist.epoch)):
         return None
     agent = scope['agent']
-    if (not phone_main_live(agent) or not feedback_pairing_live(host, scope['send'])
+    if (not phone_main_live(agent) or not pairing_live(host, scope['send'])
             or getattr(scope['send'], 'state', None) in ('cancelled', 'failed')):
         return None
     return agent, copy.deepcopy(origin)
@@ -801,7 +805,7 @@ def phone_main_live(agent):
     return not (done is not None and done.is_set()) and not codex_children.phone_caller_ambiguous(agent)
 
 
-def verified_phone_feedback(host, peer):
+def verified_phone_feedback(host, peer, *, pairing_live=None):
     """Use the existing exact phone proof for a Host-owned native process."""
     from . import provenance
     agent = getattr(host, 'agent', None)
@@ -811,12 +815,8 @@ def verified_phone_feedback(host, peer):
             or provenance.untrusted_turn(agent) or provenance.owner_grant_required(agent)
             or getattr(send, 'state', None) in ('cancelled', 'failed')):
         return None
-    proof = verified_phone_chat(host, peer)
-    if proof is None or proof[0] is not agent:
-        return None
-    if not feedback_pairing_live(host, send):
-        return None
-    return proof[1]
+    proof = _verified_phone_chat(host, peer, pairing_live or feedback_pairing_live)
+    return proof[1] if proof is not None and proof[0] is agent else None
 
 
 def feedback_pairing_live(host, send):

@@ -5,7 +5,8 @@ import re
 import time
 from . import privacy
 from .silent import is_silent, strip_markers
-from .wechat_protocol import KINDS, Media
+from .wechat_filename import file_name
+from .wechat_protocol import Failure, KINDS, MAX_MEDIA, Media
 
 _FENCE = re.compile(r'^\s*(```|~~~)')
 _RULE = re.compile(r'^\s*([-*_])(\s*\1){2,}\s*$')
@@ -109,6 +110,16 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
     body = plain_text(privacy.owner_text(text))
     try:
         api = wc.api_factory(account)
+        files, skips = await _files(wc, api, turn, generation, account, valid)
+        if skips:
+            from .wechat import attachment_notice
+            body = attachment_notice(body, skips, wc.h.lang)
+            # File names/paths never enter the event; the client gets fixed reason codes.
+            wc.h.st.log('wechat_error', reason='attachment_skipped', count=len(skips), why=skips[0]['why'])
+        if files or any(s.get('delivery_unknown') for s in skips):
+            wc.fwd_sent[turn_id] = time.monotonic()
+        if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
+            return {'ok': False, 'why': (_why(wc) or 'not_configured') if valid() else 'not_configured'}
         item = None
         if len(body.encode('utf-8')) > 4000:
             item = await asyncio.to_thread(Media(api).upload, account['ilink_user_id'],
@@ -118,12 +129,11 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
         await wc.send(api, body if item is None else '', generation, item=item)
         wc.fwd_sent = {k: v for k, v in wc.fwd_sent.items() if now - v < 30}
         wc.fwd_sent[turn_id] = time.monotonic()
-        files, skips = await _files(wc, api, turn, generation, account, valid)
         if skips:
-            # File names/paths never enter the event; the client gets fixed reason codes.
-            wc.h.st.log('wechat_error', reason='attachment_skipped', count=len(skips), why=skips[0]['why'])
-        wc.h.st.log('wechat_forward', device=device, id=turn_id, result='ok', files=files, skipped=len(skips))
-        return {'ok': True, **({'files':files} if files else {}), **({'skips':skips} if skips else {})}
+            wc.h.st.log('wechat_forward', device=device, id=turn_id, result='partial', files=files, skipped=len(skips))
+            return {'ok': False, 'why': skips[0]['why'], 'files': files, 'skips': skips, 'text_sent': True}
+        wc.h.st.log('wechat_forward', device=device, id=turn_id, result='ok', files=files, skipped=0)
+        return {'ok': True, **({'files':files} if files else {})}
     except Exception as e:
         if getattr(e, 'code', None) in ('context_rejected', 'no_context'):   # WeChat refused: message ClawBot first
             # P559: which one, the platform's ret (an integer; 10-27 TB: -2 at 29 h after a 23 h send passed) and the age of the
@@ -142,48 +152,71 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
 _IMAGES = ('image/jpeg', 'image/png', 'image/gif', 'image/webp')
 
 
+def attachment_failure(wc, exc, phase):
+    """Return safe delivery metadata. An upload failure cannot have sent a chat item."""
+    why, http, ret = 'internal', 0, 0
+    if isinstance(exc, Failure):
+        phase, why, http, ret = exc.phase or phase, exc.code, exc.http, exc.ret
+    result = 'needs_message' if why in ('context_rejected', 'no_context') else 'provider_too_large' if http == 413 else 'send_failed'
+    unknown = phase == 'sendmessage' and result == 'send_failed' and why not in (
+        'api_error', 'stopped', 'binding_taken_over') and not 400 <= http < 500
+    wc.store.count('send_failed')
+    wc.h.st.log('wechat_attachment', result=result, phase=phase, why=why, http_status=http, ret=ret)
+    return {'why': result, 'delivery_unknown': unknown}
+
+
 async def _files(wc, api, turn, generation, account, valid):
-    """#483: after the words, each file card of the page (already checked for the owner when the page ended, re-opened and
+    """#483: each file card of the page (already checked for the owner when the page ended, re-opened and
     re-hashed here by tg_media.read_checked) as its own WeChat message — pictures as images, everything else (videos too)
     as a file. Owner's own ClawBot chat only (this forward never picks a recipient). Over WeChat's 25 MiB → skipped with
     its reason; one failed upload stops the rest (no replay). → (files sent, [{name, why[, bytes]}])."""
     from . import tg_media
     from . import media as media_mod
-    from .wechat_protocol import MAX_MEDIA
     media = getattr(wc.h, 'media', None)
     sent, skipped = 0, []
     for it in (turn.get('media') or [])[:media_mod.MAX_ITEMS]:
         if not isinstance(it, dict) or not isinstance(it.get('mid'), str):
             continue
         rec = media.get(it['mid']) if media is not None else None
-        name = str((rec or it).get('name') or 'file')[:128]
+        label = str((rec or it).get('name') or 'file')[:128]
         if rec is None:
-            skipped.append({'name': name, 'why': 'gone'})
+            skipped.append({'name': label, 'why': 'gone'})
             continue
+        name = rec['parts'][-1]
         if int(rec.get('bytes') or 0) > MAX_MEDIA:
-            skipped.append({'name': name, 'why': 'too_big', 'bytes': int(rec['bytes'])})
+            skipped.append({'name': label, 'why': 'too_big', 'bytes': int(rec['bytes']), 'max_bytes': MAX_MEDIA})
             continue
         if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
-            skipped.append({'name': name, 'why': 'stopped'})
+            skipped.append({'name': label, 'why': 'stopped'})
             break
+        if name != rec['name'] and rec.get('mime') not in _IMAGES:
+            try:
+                await asyncio.to_thread(file_secret_check, rec['root'], os.path.join(rec['root'], *rec['parts']))
+            except (OSError, ValueError):
+                skipped.append({'name': 'file', 'why': 'secret'})
+                continue
         try:
             data = await asyncio.to_thread(tg_media.read_checked, rec)
         except (media_mod.Gone, OSError):
-            skipped.append({'name': name, 'why': 'gone'})
+            skipped.append({'name': label, 'why': 'gone'})
             continue
         if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
-            skipped.append({'name': name, 'why': 'stopped'})
+            skipped.append({'name': label, 'why': 'stopped'})
             break
+        phase = 'getuploadurl'
         try:
             spec = {'type': 2} if rec.get('mime') in _IMAGES else {'type': 4, 'file_item': {'file_name': name}}
             item = await asyncio.to_thread(Media(api).upload, account['ilink_user_id'], spec, data)
             if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
-                skipped.append({'name': name, 'why': 'stopped'})
+                skipped.append({'name': label, 'why': 'stopped'})
                 break
+            phase = 'sendmessage'
             await wc.send(api, '', generation, item=item)
-        except Exception:   # noqa: BLE001 — a failed media send is never replayed; the reason is a fixed code
-            wc.store.count('send_failed')
-            skipped.append({'name': name, 'why': 'send_failed'})
+        except Exception as exc:   # noqa: BLE001 — a failed media send is never replayed; the reason is a fixed code
+            if isinstance(exc, Failure) and exc.code == 'invalid_file_name':
+                skipped.append({'name': 'file', 'why': exc.code})
+                continue
+            skipped.append({'name': label, **attachment_failure(wc, exc, phase)})
             break
         finally:
             data = b''
@@ -273,7 +306,6 @@ def file_secret_check(root, path, data=None, mime=None):
 async def send_file(host, item, binding, *, valid):
     """One admitted owner file → the pinned owner's existing WeChat; no new recipient or resend."""
     from . import file_show, tg_media
-    from .wechat_protocol import MAX_MEDIA
     def live():
         return valid() and file_binding_live(host, binding)
     if not live():
@@ -283,33 +315,36 @@ async def send_file(host, item, binding, *, valid):
     if rec is None:
         return file_show.failure('gone')
     if rec['bytes'] > MAX_MEDIA:
-        return file_show.failure('too_big')
-    attempted = False
+        return file_show.size_failure(MAX_MEDIA)
+    phase = 'read'
     try:
+        name = file_name(rec['parts'][-1])
         data = await asyncio.to_thread(tg_media.read_checked, rec)
         await asyncio.to_thread(file_secret_check, rec['root'], os.path.join(rec['root'], *rec['parts']), data, rec['mime'])
         if not live():
             return file_show.failure('binding_changed')
         api = wc.api_factory(binding['account'])
-        spec = {'type': 2} if rec['mime'] in _IMAGES else {'type': 4, 'file_item': {'file_name': rec['name']}}
+        spec = {'type': 2} if rec['mime'] in _IMAGES else {'type': 4, 'file_item': {'file_name': name}}
         guard = {'valid': live} if binding.get('inbound') else {}
+        phase = 'getuploadurl'
         outgoing = await asyncio.to_thread(Media(api).upload, binding['account']['ilink_user_id'], spec, data, retry=False, **guard)
         await asyncio.to_thread(file_secret_check, rec['root'], os.path.join(rec['root'], *rec['parts']), data, rec['mime'])
         if not live():
             return file_show.failure('binding_changed')
-        attempted = True
+        phase = 'sendmessage'
         if binding.get('inbound'):
             await wc.send(api, '', binding['generation'], item=outgoing, file_binding=binding, valid=live)
         else:
             await wc.send(api, '', binding['generation'], item=outgoing)
         return {'result': 'sent_to_wechat', 'platform_accepted': True, 'client_downloaded': False,
                 'files': 1, 'mime': rec['mime'], 'bytes': rec['bytes']}
-    except (OSError, ValueError) as exc:
-        why = str(exc) if str(exc) in ('secret', 'privacy_unavailable') else 'send_failed'
     except Exception as exc:
-        code = getattr(exc, 'code', None)
+        if isinstance(exc, (OSError, ValueError)) and str(exc) in ('secret', 'privacy_unavailable'):
+            return file_show.failure(str(exc))
+        code = exc.code if isinstance(exc, Failure) else None
         if code == 'file_binding_changed':
             return file_show.failure('binding_changed')
-        why = 'needs_message' if code in ('context_rejected', 'no_context') else 'send_failed'
-    wc.store.count('send_failed')
-    return {**file_show.failure(why), 'delivery_unknown': attempted}
+        if code == 'invalid_file_name':
+            return file_show.failure(code)
+        detail = attachment_failure(wc, exc, phase)
+        return {**file_show.failure(detail['why']), **detail}

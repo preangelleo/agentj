@@ -1,20 +1,20 @@
 {
   "current": {
-    "version": "0.30.80",
+    "version": "0.30.81",
     "paths": [
-      "app.3239dc51c9e0c38f65c9e65a0cce70ad4f41c869f5a9736d8470de3f3d2a8408.css.gz",
+      "app.c9e8de81a35c98729ecdc8802f7f902836b26383f477483fe92d58c83fc55c1b.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
       "js/locale-en.4dab3f5270ef3507eac026d010718c08867bcaec3de60d52af750291820cf020.js",
       "js/locale-zh.81b7bc74686048b065ac26228267bcba1fb4d6675ead09abc7eabb0ebf281971.js"
     ]
   },
   "previous": {
-    "version": "0.30.79",
+    "version": "0.30.80",
     "paths": [
-      "app.f1b81aba8f34f93ea41f82bec849e3e99383183cd38e1ea83c70a64f9be7b13f.css.gz",
+      "app.3239dc51c9e0c38f65c9e65a0cce70ad4f41c869f5a9736d8470de3f3d2a8408.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
-      "js/locale-en.5fb8fee13d6d195cb73009d0f6ecd6c400267d92ba198e3dd1168ad1cabccfcd.js",
-      "js/locale-zh.52ca20d55b8c4d1c2a898f8327fda359f698e31cc0528532b8f4c2e2764a08e3.js"
+      "js/locale-en.4dab3f5270ef3507eac026d010718c08867bcaec3de60d52af750291820cf020.js",
+      "js/locale-zh.81b7bc74686048b065ac26228267bcba1fb4d6675ead09abc7eabb0ebf281971.js"
     ]
   }
 }

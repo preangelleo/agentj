@@ -227,7 +227,7 @@ class Draw336(_WeChat):
             await self.receive(ASK_336)
         self.c.draw.assert_awaited_once_with(ASK_336)
         self.host.agent.submit.assert_not_called()
-        self.assertEqual(self.said(), ['画好了：东京塔前的人像，写实风格。', 2])
+        self.assertEqual(self.said(), [2, '画好了：东京塔前的人像，写实风格。'])
         page = [t for t in self.host.hist.turns.values() if t['src'].get('k') == 'wechat'][-1]
         self.assertEqual(page['src']['text'], ASK_336)
         self.assertIn('画好了', page['reply']['text'])

@@ -22,7 +22,7 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 
-from . import privacy, taskspec, uploads, wire
+from . import history, privacy, taskspec, uploads, wire
 
 CHUNK = 45_056                    # raw bytes per media_chunk → 60 075 base64url chars → one 60 160-byte padded frame (§10.3)
 WINDOW = 8                        # chunks answered per media_get (the phone asks for the next window when it has them)
@@ -283,6 +283,16 @@ PACKAGE = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))   # #481:
 INTERNAL_NAME = {"zh": "这份资料", "en": "This file"}   # #481: never an internal file name on the page
 
 
+def bounded_name(name: str) -> str:
+    """Keep a supported suffix inside the 128 UTF-16 units accepted by older phones."""
+    if wire.units(name) <= NAME_MAX:
+        return name
+    stem, suffix = os.path.splitext(name)
+    if suffix.lower() not in KINDS:
+        stem, suffix = name, ""
+    return stem[:history._cut_units(stem, NAME_MAX - len(suffix))] + suffix
+
+
 def owner_name(name: str, why: str, lang: str = "zh") -> str:
     """#481: a skipped reference into Agent J's own folders shows a plain phrase, never its internal file name."""
     return INTERNAL_NAME["en" if lang == "en" else "zh"] if why == "private" else name
@@ -508,10 +518,13 @@ class Media:
         except (OSError, ValueError, TypeError):
             return None
 
-    def check(self, ref: Ref, owner: bool = False, root: str | None = None, mask: bool = False, large: bool = False) -> tuple[dict | None, str | None]:
+    def check(self, ref: Ref, owner: bool = False, root: str | None = None, mask: bool = False,
+              large: bool = False, *, max_bytes: int | None = None, preflight: bool = False,
+              skip_paths=()) -> tuple[dict | None, str | None]:
         """Reference → (record, why), or (None, None) when implicit/nonfile.
     Owner roots include validated current; others use configured root. Credential files keep pickup cards.
-    mask=True emits only a private masked copy; transient values leave via last_values, never the record."""
+    mask=True emits only a private masked copy; transient values leave via last_values, never the record.
+    preflight=True returns type and size only. A later full check is required before delivery."""
         self._tl.where = None
         self._tl.values = None
         explicit_root = root is not None
@@ -537,12 +550,16 @@ class Media:
             raw = os.path.normpath(os.path.join(root, p))
             if here and os.path.lexists(os.path.join(here, p)):
                 raw = os.path.normpath(os.path.join(here, p))
+        if raw in skip_paths:
+            return None, None
         quiet = not ref.explicit
         if privacy.credentials(raw, entropy=False):
             return None, (None if quiet else "secret")
         if not os.path.lexists(raw):
             return None, (None if quiet else "gone")
         real = os.path.realpath(raw)
+        if real in skip_paths:
+            return None, None
         # A path through the generated tree cannot borrow even an otherwise allowed target via a link.
         if generated and _inside(raw, generated) and raw != real:
             return None, "gone"
@@ -581,6 +598,8 @@ class Media:
             if s.st_uid != os.getuid():
                 return None, (None if quiet else "outside")
             if keyish:                    # owner: never sent as a file — a pickup card when it fits, else a clear note
+                if preflight:
+                    return None, "key_file"
                 if s.st_size > CARD_MAX or s.st_size == 0:
                     return {"name": parts[-1][:NAME_MAX], "bytes": s.st_size}, "key_file"
                 sha, _ = _hash_and_scan(fd, s.st_size, False, False)
@@ -589,10 +608,13 @@ class Media:
                 return None, (None if quiet else "type")
             if not _sniff(mime, ext, os.pread(fd, 8192, 0)):
                 return None, "type"
-            if s.st_size > CAPS[kind] and not large:
-                return {"name": parts[-1], "bytes": s.st_size}, "too_big"
+            cap = min(CAPS[kind], max_bytes) if max_bytes is not None else CAPS[kind]
+            if s.st_size > cap and (not large or max_bytes is not None):
+                return {"name": parts[-1], "bytes": s.st_size, "max_bytes": cap}, "too_big"
             if s.st_size == 0:
                 return None, None
+            if preflight:
+                return {"name": parts[-1]}, None
             version = (bool(owner), bool(mask), rroot, tuple(parts), s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
             with self.lock:
                 cached = self._checked.get(version)
@@ -796,7 +818,8 @@ class Media:
         return getattr(self._tl, "where", None)
 
     def _rec(self, parts, mime, kind, s, sha, ref, rroot) -> dict:
-        rec = {"name": parts[-1][:NAME_MAX], "mime": mime, "kind": kind, "bytes": s.st_size, "sha256": sha,
+        name = parts[-1][:NAME_MAX] if mime == "application/octet-stream" else bounded_name(parts[-1])
+        rec = {"name": name, "mime": mime, "kind": kind, "bytes": s.st_size, "sha256": sha,
                 "ref": ref.text, "root": rroot, "parts": parts, "dev": s.st_dev, "ino": s.st_ino,
                 "mtime": s.st_mtime_ns, "ctime": s.st_ctime_ns}
         if rroot == getattr(self._tl, "generated", None):
@@ -830,7 +853,7 @@ class Media:
         """Owner scan plus explicit credential references as (skip, record) pairs for pickup cards."""
         items, skips, keys, total, seen = [], [], [], 0, set()
         for ref in refs(text):
-            name = privacy.owner_text(os.path.basename(ref.path.rstrip("/")) or ref.path)[:NAME_MAX]
+            name = bounded_name(privacy.owner_text(os.path.basename(ref.path.rstrip("/")) or ref.path))
             if _PLACEHOLDER.search(ref.path):
                 if ref.explicit:
                     skips.append({"name": name, "why": "masked"})

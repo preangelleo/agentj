@@ -9,7 +9,7 @@ import { startWebServer } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
 import { evaluate, launch, navigate, newPage, rect, sleep, waitFor, waitState } from './browser.mjs';
 
-const web = await startWebServer();
+const web = await startWebServer({publicDir: process.env.RTAJ_PUBLIC});
 const host = await startFakeHost();
 const browser = await launch();
 const url = web.url.replace('127.0.0.1', 'localhost');
@@ -129,11 +129,23 @@ try {
     card = await approval(nextId());
     await approveVisible(client, card);
     await sleep(300);
+    const waitDot = '#sheet .ask > .dot';
+    assert.equal(await evaluate(page, visible(waitDot)), true, 'live approval shows the waiting dot');
     const button = await rect(page, '#apprAllow');
     await evaluate(page, 'window.fixtureOffset = 121000');
     await sleep(1150);
     await mark(page, label + '-stale');
     const buttons = await evaluate(page, visible('#apprBtns'));
+    const dot = await evaluate(page, visible(waitDot));
+    const waiting = await evaluate(page, "document.getElementById('askText').textContent");
+    const state = await evaluate(page, visible('#askState'));
+    const expectLegacyDot = process.env.RTAJ_EXPECT_LEGACY_DOT === '1';
+    check(label + ' local expiry shows the state row and clears the waiting label', () => {
+      assert.equal(waiting, '');
+      assert.equal(state, true);
+    });
+    check(label + (expectLegacyDot ? ' reproduces the old lone dot' : ' local expiry clears the waiting dot'),
+      () => assert.equal(dot, expectLegacyDot));
     await press(client, button);
     await sleep(500);
     check(label + ' expired approval controls are gone', () => assert.equal(buttons, false));

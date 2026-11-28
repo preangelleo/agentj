@@ -16,6 +16,7 @@ import secrets
 import time
 from .compose import Send
 from . import approvals, confirm_tier, controls, peer_guard, peer_session, privacy, provenance, wire
+from .wechat_filename import file_name
 from .wechat_protocol import API, BASE, KINDS, MAX_MEDIA, Media, Failure, safe_url
 from .wechat_store import Store
 from .channel_avatar import KINDS as AVATAR_KINDS, attachments, handoff, public_reply, choice, choose
@@ -33,6 +34,40 @@ _WORD = re.compile(r'[A-Za-z0-9_]{1,40}')
 
 def _word(value):
     return value if isinstance(value, str) and _WORD.fullmatch(value) else None
+
+
+def attachment_notice(words, reasons, lang):
+    """Replace an unverified success claim with fixed status and already vetted public links."""
+    from .channel_avatar import URL
+    from .text import pick
+    lines = []
+    for reason in reasons:
+        why = reason.get('why')
+        if why == 'too_big' and (limit := reason.get('max_bytes')):
+            mib = limit // (1024 * 1024)
+            if reason.get('scope') in ('page', 'reply'):
+                note = pick(lang, f'附件合计超过 {mib} MiB，超出的文件未发送。',
+                            f'Total attachments exceeded {mib} MiB. The excess files were not sent.')
+            else:
+                note = pick(lang, f'附件超过微信对此类文件的发送上限（{mib} MiB），未发送。',
+                            f'The attachment exceeded the WeChat limit of {mib} MiB for this file type and was not sent.')
+        elif why == 'provider_too_large':
+            mib = MAX_MEDIA // (1024 * 1024)
+            note = pick(lang, f'微信服务拒绝了这个附件的大小。Agent J 的单件上限为 {mib} MiB。',
+                        f'WeChat rejected this attachment because of its size. Agent J allows up to {mib} MiB per attachment.')
+        elif why in ('type', 'invalid_file_name'):
+            note = pick(lang, '微信附件未发送，文件类型或文件名不支持。',
+                        'The WeChat attachment was not sent because its format or name is unsupported.')
+        elif reason.get('delivery_unknown') or reason.get('result') == 'queued':
+            note = pick(lang, '微信附件是否发出尚未确认。', 'Sending the WeChat attachment could not be confirmed.')
+        else:
+            note = pick(lang, '微信附件未发送。', 'The WeChat attachment was not sent.')
+        if note not in lines:
+            lines.append(note)
+    if not privacy.credentials(words):
+        links = dict.fromkeys(link.rstrip(').,;!?。，；！？') for link in URL.findall(words))
+        lines.extend(links)
+    return '\n'.join(lines)
 
 
 HANDOFF = f'已转给 {agent_label(None)}，请回 Agent J 网页跟它确认'
@@ -353,6 +388,7 @@ class WeChat:
         self.setup_lock = asyncio.Lock()
         self.closed = False
         self.fwd_inflight, self.fwd_sent, self.fwd_rate = set(), {}, {}
+        self.file_results = {}
 
     def can_forward(self):
         d = self.store.data
@@ -494,6 +530,7 @@ class WeChat:
         d = self.store.data
         d.update(account={}, cursor='', context='', sessions={}, generation=secrets.token_hex(16), binding_error=None, last_forward=None)
         self.error, self.last_forward = None, None
+        self.file_results.clear()
         for r in d['records'].values():
             if r['state'] == 'pending':
                 r['state'] = 'unbound'
@@ -887,10 +924,24 @@ class WeChat:
         self.card_tasks.add(task)
         task.add_done_callback(self.card_tasks.discard)
 
+    def record_file_result(self, send, binding, ticket, path, result):
+        """Keep a same-turn status and local path for deduplication, only in host memory."""
+        if (getattr(send, 'wechat_file_binding', None) is not binding
+                or binding['generation'] != self.store.data['generation']):
+            return
+        key = (binding['generation'], send.turn)
+        statuses = self.file_results.setdefault(key, {})
+        statuses[ticket] = (path, {k: result[k] for k in ('result', 'why', 'max_bytes', 'scope', 'delivery_unknown') if k in result})
+        if len(statuses) > 64:
+            statuses.pop(next(iter(statuses)))
+        if len(self.file_results) > 64:
+            self.file_results.pop(next(iter(self.file_results)))
+
     async def answer_main(self, r, text, failed):
         from .silent import is_silent, strip_markers
         from . import owner_channels as oc
         generation = self.store.data['generation']
+        explicit = self.file_results.pop((r.get('generation'), r.get('turn')), {})
         if r.get('generation') != generation or not self.store.data['account'] or self.h.stopped():
             return
         lang = oc.lang_of(self.h)
@@ -906,10 +957,12 @@ class WeChat:
             text = ('这一轮没有完成，请在 Agent J 网页查看。' if lang != 'en' else 'This turn did not complete. Check Agent J Web App.')
         text = strip_markers(text)
         from . import media as media_mod
-        named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text, limit=media_mod.MAX_ITEMS)
-        if not named and not files and not keys and any(ref.path.startswith('/') for ref in media_mod.refs(text)):
-            # A named absolute local file produced no attachment. Do not log the path or
-            # infer a transport failure; the scanner may have refused it for safety.
+        refused = [result for _path, result in explicit.values() if result['result'] != 'sent_to_wechat']
+        skip_paths = {path for path, _result in explicit.values()}
+        named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text, limit=media_mod.MAX_ITEMS,
+                                                            refused=refused, skip_paths=skip_paths)
+        if not explicit and not named and not files and not keys and any(ref.path.startswith('/') for ref in media_mod.refs(text)):
+            # A named absolute local file produced no attachment. Do not log the path or infer transport failure.
             self.h.st.log('wechat_error', reason='attachment_skipped')
         text = await self.owner_out(text)      # P573: keys → pickup cards + placeholders; the answer itself is delivered
         reply = public_reply(text, named, lang, files)
@@ -921,32 +974,58 @@ class WeChat:
             await owner_route.offer_files(self.h, keys, lang)
             note = tg_media.skip_lines([k for k, _r in keys if k], lang)   # P573: masked copies have no skip
             reply = privacy.owner_text(reply + '\n\n' + note) if note else reply
-        from .privacy import redact
-        r['reply_summary'] = redact(str(reply))[:2000]
-        await self.deliver(self.api_factory(self.store.data['account']), generation, r, reply, named, files)
+        await self.deliver(self.api_factory(self.store.data['account']), generation, r, reply, named, files, refused=refused)
         self.store.save()
 
-    async def deliver(self, api, generation, r, words, images, files):
-        """The answer and its pictures / files as WeChat messages (WeChat's 25 MiB media cap is checked by attachments())."""
-        from .wechat_forward import plain_text
+    async def deliver(self, api, generation, r, words, images, files, *, refused=()):
+        """Send attachments before a reply that could describe those attachments as sent."""
+        from .wechat_forward import attachment_failure, plain_text
+        from . import owner_channels as oc
+        def live():
+            return generation == self.store.data['generation'] and not self.h.stopped() and not self.closed
         r['delivery'] = 'unknown'
+        refused = list(refused)
+        outgoing = [({'type': 2}, data) for _mime, data in images]
+        for name, _mime, data in files:
+            try:
+                file_name(name)
+            except Failure as exc:
+                refused.append({'why': exc.code})
+                continue
+            outgoing.append(({'type': 4, 'file_item': {'file_name': name}}, data))
+        accepted = 0
+        for spec, data in outgoing:
+            if not live():
+                return
+            phase = 'getuploadurl'
+            try:
+                item = await asyncio.to_thread(Media(api).upload, self.store.data['account']['ilink_user_id'], spec, data, valid=live)
+                if not live():
+                    return
+                phase = 'sendmessage'
+                await self.send(api, '', generation, item=item)
+            except Exception as exc:  # noqa: BLE001 — never replay an attachment
+                if not live():
+                    return
+                refused.append(attachment_failure(self, exc, phase))
+                break
+            accepted += 1
+        if not live():
+            return
+        if refused:
+            words = attachment_notice(words, refused, oc.lang_of(self.h))
+        r['reply_summary'] = privacy.redact(words)[:2000]
         try:
             await self.send(api, plain_text(self.greet(words)), generation)
-            for _mime, data in images:
-                if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
-                    break
-                item = await asyncio.to_thread(Media(api).upload, self.store.data['account']['ilink_user_id'], {'type':2}, data)
-                await self.send(api, '', generation, item=item)
-            for name, _mime, data in files:
-                if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
-                    break
-                item = await asyncio.to_thread(Media(api).upload, self.store.data['account']['ilink_user_id'],
-                                               {'type':4, 'file_item':{'file_name':name}}, data)
-                await self.send(api, '', generation, item=item)
         except Exception:  # noqa: BLE001 — ambiguous delivery is never replayed
             self.store.count('send_failed')
         else:
-            r['delivery'] = 'sent'
+            if not refused:
+                r['delivery'] = 'sent'
+            elif accepted:
+                r['delivery'] = 'partial'
+            elif not any(x.get('delivery_unknown') or x.get('result') == 'queued' for x in refused):
+                r['delivery'] = 'failed'
 
     async def place_images(self, source, images):
         """Pictures drawn for a channel → inbox files, so the Web App page can show them."""

@@ -568,8 +568,7 @@ def transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_overri
     started = time.monotonic()
     result = _transcribe(wav_path, timeout_s=timeout_s, state_dir=state_dir, engine_override=engine_override)
     asr_usage.record(result, state_dir=state_dir, model=MODEL_ID if result.get('engine') == 'sherpa' else None,
-                     elapsed_ms=(time.monotonic() - started) * 1000,
-                     fallback=result.get('notice') == 'local_fallback')
+                     elapsed_ms=(time.monotonic() - started) * 1000)
     return result
 
 
@@ -597,11 +596,12 @@ def _transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_overr
         recovered = _fail("engine_failed", "local recovery failed")
     finally:
         shutdown()
+    failure = "timeout" if result.get("reason") == "timeout" else "engine_failed"
     if recovered.get("ok"):
-        return {**recovered, "notice": "local_fallback"}
+        return {**recovered, "notice": "local_fallback", "remote_failure": failure}
     # Retain the original diagnostic when no recovery engine is installed.
     return {**(result if recovered.get("reason") == "not_installed" else recovered),
-            "notice": "remote_unavailable"}
+            "notice": "remote_unavailable", "remote_failure": failure, "fallback": True}
 
 
 def _transcribe_once(wav_path: str, *, timeout_s: float, state_dir=None, engine_override=None) -> dict:

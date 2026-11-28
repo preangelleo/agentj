@@ -17,6 +17,21 @@ export const FRAME_NOBAR = '<style>html,body,*{scrollbar-width:none}::-webkit-sc
 const ID22 = /^[A-Za-z0-9_-]{22}$/;
 const MIME = /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,80}$/i;
 const base = (s) => String(s).split(/[/\\]/).filter(Boolean).pop() || '';
+const NAME_MAX = 128;
+
+export function fileNameParts(name) {
+  const dot = name.lastIndexOf('.');
+  const hasSuffix = dot > 0 && dot < name.length - 1 && name.length - dot < NAME_MAX;
+  return hasSuffix ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+}
+
+function cardName(value) {
+  const name = base(value);
+  if (name.length <= NAME_MAX) return name;
+  const [stem, suffix] = fileNameParts(name);
+  const prefix = stem.slice(0, NAME_MAX - suffix.length).replace(/[\uD800-\uDBFF]$/, '');
+  return prefix + suffix;
+}
 
 function privateOffer(d,bytes){
   if(!d||!/^[0-9a-f]{32}$/.test(d.id)||!/^[A-Za-z0-9_-]{22}$/.test(d.seat)
@@ -33,11 +48,11 @@ export function sanitize(t) {
     && ID22.test(m.mid) && typeof m.name === 'string' && typeof m.mime === 'string' && MIME.test(m.mime)
     && Object.hasOwn(CAPS, m.kind) && Number.isInteger(m.bytes) && m.bytes > 0 && m.bytes <= CAPS[m.kind]
     && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256)).slice(0, MAX_ITEMS)
-    .map((m) => ({ mid: m.mid, name: base(m.name).slice(0, 128) || m.kind, mime: m.mime.toLowerCase(), kind: m.kind, bytes: m.bytes,
+    .map((m) => ({ mid: m.mid, name: cardName(m.name) || m.kind, mime: m.mime.toLowerCase(), kind: m.kind, bytes: m.bytes,
       sha256: m.sha256, ref: typeof m.ref === 'string' ? m.ref.slice(0, 512) : '',
       ...(privateOffer(m.download,m.bytes)&&(!m.download.sha256||m.download.sha256===m.sha256)?{download:privateOffer(m.download,m.bytes)}:{}) }));
   const skip = (Array.isArray(t && t.media_skip) ? t.media_skip : []).filter((s) => s && typeof s.name === 'string' && WHYS.includes(s.why))
-    .slice(0, MAX_ITEMS * 2).map((s) => ({ name: base(s.name).slice(0, 128), why: s.why, bytes: Number.isInteger(s.bytes) && s.bytes > 0 ? s.bytes : 0,
+    .slice(0, MAX_ITEMS * 2).map((s) => ({ name: cardName(s.name), why: s.why, bytes: Number.isInteger(s.bytes) && s.bytes > 0 ? s.bytes : 0,
       ...(privateOffer(s.download,s.bytes)?{download:privateOffer(s.download,s.bytes)}:{}),
       // P424 #142: where a key-like refusal is — the line and a two-character masked hint (never the text)
       ...(Number.isInteger(s.line) && s.line > 0 && s.line < 1e8 && typeof s.hint === 'string' && s.hint.length <= 4 ? { line: s.line, hint: s.hint } : {}) }));

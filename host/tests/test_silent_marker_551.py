@@ -71,7 +71,8 @@ class Channels(unittest.IsolatedAsyncioTestCase):
         for marker in MARKERS:
             for text in (marker,marker+'正文','正文'+marker):
                 r={'generation':1}
-                wc=NS(store=NS(data={'generation':1,'account':{'id':1}},save=Mock()),h=NS(stopped=lambda:False,lang='zh'))
+                wc=NS(store=NS(data={'generation':1,'account':{'id':1}},save=Mock()),h=NS(stopped=lambda:False,lang='zh'),
+                      file_results={})
                 with patch.object(wechat.owner_channels if hasattr(wechat,'owner_channels') else __import__('agentj.owner_channels',fromlist=['x']),'lang_of',return_value='zh'):
                     for failed in (False,True):
                         await wechat.WeChat.answer_main(wc,r,text,failed)
@@ -126,7 +127,8 @@ class WeChatFailureFallback(unittest.IsolatedAsyncioTestCase):
         from agentj import owner_channels
         for text in ('', '前[silent]后'):
             r={'generation':1}
-            wc=NS(store=NS(data={'generation':1,'account':{'id':1}},save=Mock()),h=NS(stopped=lambda:False,lang='zh'))
+            wc=NS(store=NS(data={'generation':1,'account':{'id':1}},save=Mock()),h=NS(stopped=lambda:False,lang='zh'),
+                  file_results={})
             # Stop at the first attachment operation: no provider/network call.
             with patch.object(owner_channels,'lang_of',return_value='zh'),patch.object(wechat,'attachments',side_effect=RuntimeError('captured')) as attach:
                 with self.assertRaisesRegex(RuntimeError,'captured'):

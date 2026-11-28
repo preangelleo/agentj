@@ -66,7 +66,7 @@ def public_reply(text, images=(), lang=None, files=()):
     return privacy.owner_text(clean)[:1800]
 
 
-def attachments(host, text, *, limit=FILES_MAX):
+def attachments(host, text, *, limit=FILES_MAX, refused=None, skip_paths=()):
     """P557: files an owner-channel reply names → (images [(mime, data)], files [(name, mime, data)], their paths, keys): the
     same owner-direction checks as a main reply to the owner's Telegram (tg_media.collect / read_checked: inside the working
     folder, deny list, no-follow open, secret scan). Credential files come back in `keys` for pickup cards, never attached."""
@@ -75,25 +75,44 @@ def attachments(host, text, *, limit=FILES_MAX):
     if not media or not getattr(media, 'workdir', None) or not isinstance(text, str):
         return [], [], [], keys
     try:
-        items, skips = tg_media.collect(media, text, keys, True, limit=limit)   # P573: masked copy + value cards
+        limits = {'max_bytes': FILES_BYTES} if refused is not None else {}
+        items, skips = tg_media.collect(media, text, keys, True, limit=limit, skip_paths=skip_paths, **limits)
     except Exception:   # noqa: BLE001 — no attachment is the old behaviour, never a lost reply
         return [], [], [], keys
     if skips:
         host.st.log("channel_attachments", result="skipped", count=len(skips), why=skips[0]["why"])
+    if refused is not None:
+        refused.extend({k: s[k] for k in ('why', 'max_bytes') if k in s} for s in skips
+                       if s['why'] not in ('key_file', 'key_content'))
     images, files, paths, total = [], [], [], 0
     for rec in items[:limit]:
+        if total + rec['bytes'] > FILES_BYTES:
+            if refused is None:
+                break
+            refused.append({'why': 'too_big', 'max_bytes': FILES_BYTES, 'scope': 'reply'})
+            continue
+        path = os.path.join(rec['root'], *rec['parts'])
+        is_image = rec['mime'] in ('image/png', 'image/jpeg') and rec['bytes'] <= tg_media.PHOTO_MAX
+        name = rec['parts'][-1] if refused is not None else rec['name']
+        if not is_image and name != rec['name']:
+            from .wechat_forward import file_secret_check
+            try:
+                file_secret_check(rec['root'], path)
+            except (OSError, ValueError):
+                refused.append({'why': 'secret'})
+                continue
         try:
             data = tg_media.read_checked(rec)
         except Exception:   # noqa: BLE001
+            if refused is not None:
+                refused.append({'why': 'gone'})
             continue
-        if total + len(data) > FILES_BYTES:
-            break
         total += len(data)
-        paths.append(os.path.join(rec['root'], *rec['parts']))
-        if rec.get('mime') in ('image/png', 'image/jpeg') and len(data) <= tg_media.PHOTO_MAX:
+        paths.append(path)
+        if is_image:
             images.append((rec['mime'], data))
         else:
-            files.append((str(rec.get('name') or 'file')[:128], rec.get('mime') or 'application/octet-stream', data))
+            files.append((name, rec['mime'], data))
     return images, files, paths, keys
 
 
