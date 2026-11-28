@@ -258,3 +258,99 @@ async def deliver_observed(host, ask, remind):
     finally:
         if targets:
             host._bg(_follow_up(host, targets, remind), 'approval_delivery')
+
+
+@dataclass
+class SpecialProbe:
+    session: object
+    pair_revision: str
+    deadline: float
+    nonce: str
+    live: object
+    message: dict
+    phase: str = ''
+
+
+def _special(host):
+    return host.__dict__.setdefault('_special_delivery_probes', {})
+
+
+def _special_live(host, probe, *, connected=False):
+    session = probe.session
+    return (not host.stopped() and time.monotonic() < probe.deadline and probe.live()
+            and host.st.is_allowed(session.pub) and _pair_revision(host, session) == probe.pair_revision
+            and (not connected or host._paired_live(session)))
+
+
+def special_write_live(host, session, message):
+    probe = _special(host).get((message['id'], session.cid))
+    return (probe is not None and probe.session is session and message['delivery']['n'] == probe.nonce
+            and message['t'] == probe.message['t'] and _special_live(host, probe, connected=True))
+
+
+def receive_special(host, session, message):
+    if set(message) != {'t', 'kind', 'id', 'n', 'phase'}:
+        return
+    rid, nonce, phase = message['id'], message['n'], message['phase']
+    if not isinstance(rid, str) or not isinstance(nonce, str):
+        return
+    probe = _special(host).get((rid, session.cid))
+    if (probe is None or probe.session is not session or probe.nonce != nonce
+            or not _special_live(host, probe, connected=True)
+            or (probe.phase, phase) not in (('', 'received'), ('received', 'visible'))
+            or (phase == 'visible' and not session.fg)):
+        return
+    probe.phase = phase
+    host.st.log('special_card_delivery', id=rid, device=session.device, phase=phase)
+
+
+def observe_special(host, session, message, live):
+    """Attach observation only to open sudo and host-owned upgrade prompts."""
+    if (message['t'] != 'upg_card' and
+            (message['t'] != 'elev' or message.get('kind') != 'sudo' or message.get('state') == 'running')):
+        return message
+    rid = message['id']
+    key = (rid, session.cid)
+    all_probes = _special(host)
+    ttl = min(message['ttl'], 60)
+    if (not getattr(session, 'special_receipt', False) or not host._paired_live(session)
+            or ttl < 1 or key in all_probes or len(all_probes) >= MAX_TARGETS):
+        return message
+    revision = _pair_revision(host, session)
+    if not revision or not live():
+        return message
+    first = not any(other_id == rid for other_id, _ in all_probes)
+    nonce = secrets.token_hex(16)
+    probe = SpecialProbe(session, revision, time.monotonic() + ttl, nonce, live, message)
+    all_probes[key] = probe
+    if first:
+        host._bg(_follow_special(host, rid), 'special_card_delivery')
+    return {**message, 'delivery': {'n': nonce, 'ttl': ttl}}
+
+
+async def _follow_special(host, rid):
+    def matching():
+        return [probe for (other_id, _), probe in _special(host).items() if other_id == rid]
+
+    def pending():
+        live = [probe for probe in matching() if _special_live(host, probe)]
+        return bool(live) and all(probe.phase != 'visible' for probe in live)
+
+    try:
+        await asyncio.sleep(WAIT)
+        if not pending():
+            return
+        for probe in matching():
+            if _special_live(host, probe, connected=True):
+                ttl = int(probe.deadline - time.monotonic())
+                if ttl > 0:
+                    await host.send_app(probe.session, {**probe.message, 'ttl': ttl,
+                                        'delivery': {'n': probe.nonce, 'ttl': ttl}})
+        await asyncio.sleep(WAIT)
+        if pending():
+            from . import card_reminder
+            await card_reminder.deliver(host, rid, pending)
+    finally:
+        for key in list(_special(host)):
+            if key[0] == rid:
+                _special(host).pop(key)

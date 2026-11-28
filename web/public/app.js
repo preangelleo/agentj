@@ -511,7 +511,12 @@ function onApp(m) {
       return;
     }
     case 'approval_questioned': specialQuestioned(m); snap.approvalQuestioned(m); relay.approvalQuestioned(m); return;
-    case 'ask_done': relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); cardReceipt.drop('ask', m.id); pkhandin.answered('ask:' + m.id); rosterbind.grantEnded(m.id); return;   // P566: a handed-in approval ended
+    case 'ask_done': {
+      const card = snap.S.asks.get(m.id);
+      relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); relay.approvalResult(card);
+      cardReceipt.drop('ask', m.id); pkhandin.answered('ask:' + m.id); rosterbind.grantEnded(m.id);
+      return;
+    }
     case 'answer_refused': {
       // 0304 R-F5: a same-owner grant from a remote not on the roster yet — the binding prompt, the card stays open (never 「没生效」)
       const bind=m.why==='roster_binding_required'&&(snap.S.asks.get(m.id)?.tool||m.ask?.tool)==='agentj secret grant'?rosterbind.grantRefused(m):null;
@@ -1804,6 +1809,7 @@ async function main() {
     estop: (stop) => (stop ? controls.onEstop() : controls.onResume()),
     canSign: api.canSign,
     openCount: snap.openCount,
+    rerender,
     textMax: session.textMax,
     asr: () => session.peer.asr,
     p33: () => session.peer.p33,

@@ -211,6 +211,62 @@ class Adapter(unittest.TestCase):
             self.assertEqual(notices, [])
         asyncio.run(go())
 
+    def test_v2_resync_retires_only_requests_missing_from_their_own_session(self):
+        async def go():
+            child = 'ses_kid'
+            request = {'id': 'per_child', 'sessionID': child, 'action': 'shell', 'resources': ['touch marker']}
+            a, _, _ = agent(oc2.OpenCodeV2Agent, answers={
+                ('GET', '/api/session/ses_main/permission'): (200, {'data': []}),
+                ('GET', '/api/session/ses_kid/permission'): (200, {'data': [request]}),
+            })
+            awaiting = asyncio.Event()
+            decision = asyncio.get_running_loop().create_future()
+
+            async def ask(tool, inp, gone, **kw):
+                if kw.get('origin'):
+                    awaiting.set()
+                await asyncio.wait({decision, gone}, return_when=asyncio.FIRST_COMPLETED)
+                return {'behavior': 'deny' if gone.done() else 'allow'}
+
+            a.host.ask = ask
+            with mock.patch('agentj.approval_jev.low_risk_pass', return_value=False):
+                a.on_event({'type': 'session.created', 'data': {'sessionID': child, 'parentID': a.sid,
+                                                               'agent': 'general', 'permissions': a.rules}})
+                a.on_event({'type': 'permission.asked', 'data': {**request, 'id': 'per_main', 'sessionID': a.sid}})
+                a.on_event({'type': 'permission.asked', 'data': request})
+                await asyncio.wait_for(awaiting.wait(), 2)
+                main_gone, child_gone = a.pending['per_main'], a.pending['per_child']
+                await a._resync()
+                decision.set_result(True)
+                await asyncio.gather(*a.tasks)
+            self.assertTrue(main_gone.done())
+            self.assertFalse(child_gone.done())
+            self.assertEqual([call for call in a.client.calls if call[0] == 'POST'], [
+                ('POST', '/api/session/ses_kid/permission/per_child/reply', {'decision': 'once'})])
+
+        asyncio.run(go())
+
+    def test_parent_turn_end_preserves_child_until_its_process_retires(self):
+        async def go():
+            a, _, _ = agent(oc2.OpenCodeV2Agent)
+            loop = asyncio.get_running_loop()
+            parent, child, question = (loop.create_future() for _ in range(3))
+            a.pending = {'per_parent': parent, 'per_child': child}
+            a.perm_sid = {'per_parent': a.sid, 'per_child': 'ses_kid'}
+            a.questions = {'frm_child': question}
+            a.turn_done = asyncio.Event()
+            a.proc, a.connected = object(), asyncio.Event()
+            a.connected.set()
+            a._turn_end()
+            self.assertTrue(parent.done())
+            self.assertFalse(child.done())
+            self.assertFalse(question.done())
+            self.assertTrue(a._retire(a.proc))
+            self.assertTrue(child.done())
+            self.assertTrue(question.done())
+
+        asyncio.run(go())
+
     def test_v2_unknown_child_adopted_form_labelled_and_child_without_our_rules_stopped(self):
         async def go():
             a, asks, notices = agent(oc2.OpenCodeV2Agent, answers={

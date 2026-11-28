@@ -174,8 +174,11 @@ export function answerRefused(m) {
 const ASK_RESULT = { allow: 'approved', main: 'main', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', ended: 'ended', stopped: 'stopped' };
 export function askDone(m) {
   const a = S.asks.get(m.id);
-  if (!a || !ASK_RESULT[m.result]) return;
-  a.state = ASK_RESULT[m.result]; a.final_at = nowS();
+  const result = m.result === 'deny' && m.reason === 'timeout' ? 'timeout'
+    : m.result === 'deny' && m.reason === 'agent_gone' ? 'gone' : m.result;
+  if (!a || !ASK_RESULT[result]) return;
+  a.state = ASK_RESULT[result]; a.final_at = nowS();
+  a.renewable = result === 'timeout' && m.renewable === true;
   a.done_why = whyKey(m.why);   // P539: why it closed (timeout / denied / passkey / nobody / estop / serve_stop), null = as before
   S.asks.delete(m.id); S.order = S.order.filter((x) => x !== m.id);
   S.lastAsk = a;
@@ -216,10 +219,23 @@ export function prune(gone) {
   for (const a of [...S.asks.values()]) if (gone(a.id)) askDone({ id: a.id, result: a.deadline <= now ? 'expired' : 'gone' });
   for (const q of [...S.qs.values()]) if (gone(q.id)) questionDone({ id: q.id, result: q.deadline <= now ? 'expired' : 'gone' });
 }
-/** The open request on screen: the oldest one still open. */
+export const cardExpired = card => Number.isFinite(card?.deadline) && Date.now() >= card.deadline;
+
+export function cardCanAnswer(card) {
+  const map = card.kind === 'question' ? S.qs : S.asks;
+  return card.state === 'open' && map.get(card.id) === card && !cardExpired(card);
+}
+
+/** Show a live request ahead of a timed-out card whose host receipt has not arrived. */
 export function openItem() {
-  for (const id of S.order) { const x = S.asks.get(id) || S.qs.get(id); if (x) return x; }
-  return null;
+  let elapsed = null;
+  for (const id of S.order) {
+    const card = S.asks.get(id) || S.qs.get(id);
+    if (!card) continue;
+    if (!cardExpired(card)) return card;
+    elapsed ??= card;
+  }
+  return elapsed;
 }
 export const openCount = () => S.order.length;
 
@@ -279,7 +295,7 @@ export function snapshot() {
   const it = openItem();
   let status;
   if (!S.conn) status = 'unknown';
-  else if ([...S.asks.values(), ...S.qs.values()].some((a) => !a.touched)) status = 'waiting';
+  else if ([...S.asks.values(), ...S.qs.values()].some((a) => !a.touched && !cardExpired(a))) status = 'waiting';
   else if (S.handledWaiting && S.status === 'waiting') status = 'working';
   else status = { idle: 'idle', working: 'working', compacting: 'working', waiting: 'waiting' }[S.status] || 'unknown';
   const kind = status === 'waiting' ? (it ? it.kind : (S.kind === 'question' ? 'question' : 'permission')) : null;

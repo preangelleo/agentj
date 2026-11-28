@@ -27,6 +27,7 @@ from .envcompat import getenv
 TOOL = "approve"
 MAX_LINE = 8 * 1024 * 1024
 DENY_NO_SERVE = "agentj serve 没在运行或没有回应：默认拒绝。"
+CALL_ENDED = "原工具请求已结束，这次确认未生效。需要继续请重新发起 / The original tool request ended before this confirmation could apply."
 
 
 def claim_value(path: str) -> str:
@@ -57,6 +58,7 @@ class Link:
         self.sock: socket.socket | None = None
         self.lock = threading.Lock()
         self.waiting: dict[int, list] = {}    # id → [Event, answer]
+        self.calls = {}   # MCP request id → permission connection request id
         self.next_id = 0
         self.dead = False
 
@@ -81,8 +83,8 @@ class Link:
         return True
 
     def _die(self) -> bool:
-        self.dead = True
         with self.lock:
+            self.dead = True
             for slot in self.waiting.values():
                 slot[0].set()
         return False
@@ -94,42 +96,56 @@ class Link:
                 if isinstance(m, dict) and m.get("t") == "answer":
                     with self.lock:
                         slot = self.waiting.get(m.get("id"))
-                    if slot:
-                        slot[1] = m
-                        slot[0].set()
+                        if slot and not slot[0].is_set():
+                            slot[1] = m
+                            slot[0].set()
         except (OSError, ValueError):
             pass
         self._die()
 
-    def send(self, obj: dict) -> None:
-        with self.lock:
-            if self.sock and not self.dead:
-                self.sock.sendall((json.dumps(obj, ensure_ascii=False) + "\n").encode())
+    def _send_locked(self, obj: dict) -> None:
+        if self.sock and not self.dead:
+            self.sock.sendall((json.dumps(obj, ensure_ascii=False) + "\n").encode())
 
-    def ask(self, args: dict, mcp_id) -> dict:
+    def _withdraw_locked(self, rid: int) -> None:
+        slot = self.waiting.pop(rid, None)
+        if slot is not None:
+            slot[1] = {"behavior": "deny", "message": CALL_ENDED}
+            slot[0].set()
+            try:
+                self._send_locked({"t": "cancel", "id": rid})
+            except OSError:
+                pass
+
+    def ask(self, args: dict, mcp_id, started: threading.Event | None = None) -> dict:
         try:
             limit = float(getenv("AGENTJ_PERM_WAIT", "200"))
         except ValueError:
             limit = 200.0
-        if self.dead or not self.sock:
-            return {"behavior": "deny", "message": DENY_NO_SERVE}
         slot = [threading.Event(), None]
         with self.lock:
+            if self.dead or not self.sock:
+                return {"behavior": "deny", "message": DENY_NO_SERVE}
             self.next_id += 1
             rid = self.next_id
             self.waiting[rid] = slot
-            _calls[mcp_id] = rid
-        try:
-            self.send({"t": "ask", "id": rid, "tool": args.get("tool_name"), "input": args.get("input"),
-                       "tool_use_id": args.get("tool_use_id")})
-            slot[0].wait(limit)               # serve answers before this (its own deadline is shorter); this only guards a hang
-        except OSError:
-            pass
-        finally:
-            with self.lock:
-                self.waiting.pop(rid, None)
-                _calls.pop(mcp_id, None)
-        ans = slot[1]
+            self.calls[mcp_id] = rid
+            try:
+                self._send_locked({"t": "ask", "id": rid, "tool": args.get("tool_name"),
+                                   "input": args.get("input"), "tool_use_id": args.get("tool_use_id")})
+            except OSError:
+                self.waiting.pop(rid)
+                self.calls.pop(mcp_id)
+                return {"behavior": "deny", "message": DENY_NO_SERVE}
+        if started is not None:
+            started.set()
+        received = slot[0].wait(limit)
+        with self.lock:
+            if not received:
+                self._withdraw_locked(rid)
+            self.waiting.pop(rid, None)
+            self.calls.pop(mcp_id, None)
+            ans = slot[1]
         if isinstance(ans, dict) and ans.get("behavior") == "allow" and isinstance(ans.get("updatedInput"), dict):
             return {"behavior": "allow", "updatedInput": ans["updatedInput"]}
         if ans is None:
@@ -139,19 +155,15 @@ class Link:
 
     def cancel(self, mcp_id) -> None:
         with self.lock:
-            rid = _calls.get(mcp_id)
-        if rid is not None:
-            try:
-                self.send({"t": "cancel", "id": rid})
-            except OSError:
-                pass
+            rid = self.calls.get(mcp_id)
+            if rid is not None:
+                self._withdraw_locked(rid)
 
 
 LINK = Link()
-_calls: dict = {}   # MCP request id → our request id (for notifications/cancelled)
 
 
-def handle(m: dict) -> dict | None:
+def handle(m: dict, started: threading.Event | None = None) -> dict | None:
     if "id" not in m:                      # notifications (initialized, cancelled …) need no answer
         if m.get("method") == "notifications/cancelled":
             LINK.cancel((m.get("params") or {}).get("requestId"))
@@ -169,7 +181,7 @@ def handle(m: dict) -> dict | None:
     elif meth == "tools/call":
         params = m.get("params") or {}
         args = params.get("arguments") if params.get("name") == TOOL else None
-        out = LINK.ask(args, mid) if isinstance(args, dict) else {"behavior": "deny", "message": "unknown tool"}
+        out = LINK.ask(args, mid, started) if isinstance(args, dict) else {"behavior": "deny", "message": "unknown tool"}
         res = {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False)}]}
     elif meth == "ping":
         res = {}
@@ -181,8 +193,12 @@ def handle(m: dict) -> dict | None:
 _out = threading.Lock()
 
 
-def _answer(m: dict) -> None:
-    out = handle(m)
+def _answer(m: dict, started: threading.Event | None = None) -> None:
+    try:
+        out = handle(m, started)
+    finally:
+        if started is not None:
+            started.set()
     if out is not None:
         with _out:
             sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
@@ -203,7 +219,10 @@ def main() -> None:
         if not isinstance(m, dict):
             continue
         if m.get("method") == "tools/call":   # parallel tool calls → parallel cards; each blocks only its own thread
-            threading.Thread(target=_answer, args=(m,), daemon=True).start()
+            started = threading.Event()
+            threading.Thread(target=_answer, args=(m, started), daemon=True).start()
+            # An immediately following cancellation must see the registered request.
+            started.wait()
         else:
             _answer(m)
 

@@ -107,6 +107,13 @@ def recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> 
         message += (" In your FIRST reply after reading it, name one concrete in-progress item from the handoff; "
                     "do not repeat the pre-compaction acknowledgement." if lang == "en" else
                     "读完后第一条回复要点名交接中的一项具体在跑事项；不要重复压缩前的交接确认。")
+    if kind == "compact":
+        return message + ((" Check due reminders with agentj card todo due and agentj card cal due, then report the verified "
+                           "task checkpoint. A handoff or a summary is context only. Leave any action or approval with an "
+                           "unverified result pending; do not execute it from this message.")
+                          if lang == "en" else
+                          "用 agentj card todo due 和 agentj card cal due 查到期提醒，再说明核实过的任务停点。交接或摘要只供参考。"
+                          "本条消息不执行任务动作，不重复审批。结果未核实的动作保留待核。")
     return message + RECOVER_DUE["en" if lang == "en" else "zh"]
 
 
@@ -118,15 +125,16 @@ def _recover_text(lang: str, kind: str, has: bool, where: Path | None = None) ->
         if kind == "clear":
             return TAG["en"] + " The conversation was cleared. Read the handoff " + p + " first, then carry on with that task."
         if has:
-            return TAG["en"] + " Compaction finished. Read the handoff " + p + " first, then carry on with the task you were doing."
-        return (TAG["en"] + " Compaction finished; no fresh handoff was found (missing or older than 24 hours). Carry on from the compaction summary, "
-                "and write a fresh handoff to " + p + " with the " + SKILL + " skill as soon as you can.")
+            return TAG["en"] + " Compaction finished. Read the handoff " + p + " first and check what the original task has already done."
+        return (TAG["en"] + " Compaction finished; no fresh handoff was found (missing or older than 24 hours). "
+                "Check the compaction summary, and report what can be verified. The handoff location for future use of "
+                + SKILL + " is " + p + ".")
     if kind == "clear":
         return TAG["zh"] + "对话已清空。先读交接文件 " + p + "，再接着做那件事。"
     if has:
-        return TAG["zh"] + "压缩完成。先读交接文件 " + p + "，再继续刚才的任务。"
-    return (TAG["zh"] + "压缩完成，没找到新交接（文件不存在或已超过 24 小时）。先按压缩摘要继续刚才的任务，并尽快按 " + SKILL + " 技能补写一份交接到 "
-            + p + "。")
+        return TAG["zh"] + "压缩完成。先读交接文件 " + p + "，核对原任务已完成的步骤。"
+    return (TAG["zh"] + "压缩完成，没找到新交接（文件不存在或已超过 24 小时）。用压缩摘要核对原任务进度。"
+            "下次用 " + SKILL + " 时，交接文件放在 " + p + "。")
 
 
 def phone_line(lang: str, kind: str) -> str:
@@ -142,7 +150,7 @@ def now() -> float:
 # Leo (2026-10-14): "切换 Harness 的时候，写好交接文档，有一个标准的 Protocol 进行交接……把之前的对话的精要落档就行了". The
 # harness being switched away from writes `switch.md` (the agentj-handoff format) in a host turn right before the switch
 # (switch_harness.worker, after the gate and the way-back check); the new harness's first turn — the host's 「自报家门」 —
-# reads it first, then one more host turn carries on with its next step. Same place as the compaction handoff: a shared
+# reads it first as context. Automatic task delivery requires the Host's own checkpoint, independent of this file. A shared
 # session (the owner's unfenced harness) → `~/.local/state/agentj/handoff/switch.md`; Agent J's own conversation →
 # `<working root>/.agentj/handover/switch.md` (the fence hides the state directory). No session id in either name.
 SWITCH = "switch.md"
@@ -158,7 +166,8 @@ def switch_fallback(turns: dict) -> str:
     External, task and system turns are excluded; quoted words confer no permissions.
     """
     from . import privacy
-    selected = [p for p in turns.values() if (p.get('src') or {}).get('k') in ('phone', 'host')][-16:]
+    selected = [p for p in turns.values() if (src := p.get("src") or {}).get("k") in ("phone", "host")
+                and not src.get("switch_resume_job")][-16:]
     blocks, size = [], 0
     for p in reversed(selected):
         def cut(s):
@@ -240,16 +249,6 @@ def switch_prep_text(lang: str, where: str, frm: str, to: str) -> str:
             + " 技能把交接写进 `" + where + "`（Markdown；已有就先读再合并成一份新的；不超过 " + str(n) + " 行）：1. 主人原话要点；"
             "2. 进度（已完成 / 进行中 / 没开始）；3. 已拍板的决定；4. 关键绝对路径和命令；5. 坑和失败的尝试；6. 下一步；"
             "7. 等主人回答的问题。只留要点，闲聊和过程略过；不写任何密钥、token、密码或其他凭据。写完只回一句「交接写好了」，不要做别的事。")
-
-
-def switch_resume_text(lang: str, where: str) -> str:
-    """After the new harness introduced itself (and the switch was verified): carry on — the P151 recovery's twin."""
-    if lang == "en":
-        return (TAG["en"] + " The switch is done. Carry on with the task from the handoff " + where + " (its next step) as "
-                "if nothing had happened; if it has no task in progress, stop and wait for the owner. (Its text usually came "
-                "with the previous Agent J note; if not, read the file.)")
-    return (TAG["zh"] + "切换完成。按交接文件 " + where + " 里的「下一步」接着干刚才的任务；交接里没有进行中的任务就停下，等主人发话。"
-            "（交接内容一般已随上一条 Agent J 提示给你；没有的话再读文件。）")
 
 
 # ------------------------------------------------------------------ P539 (#301): the handoff reaches the new harness

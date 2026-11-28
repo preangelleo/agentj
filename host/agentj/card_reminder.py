@@ -34,16 +34,22 @@ async def _wechat(host, _subject, text, live):
         return CLOSED
     data = wc.store.data
     generation = data['generation']
-    account = dict(data['account'])
+    account, context = dict(data['account']), data['context']
     if not generation or not account.get('ilink_user_id'):
         return CLOSED
-    api = wc.api_factory(account)
-    if not live() or wechat_forward._why(wc) or data['generation'] != generation or data['account'] != account:
+
+    def still_bound():
+        current = wc.store.data
+        return (live() and not wechat_forward._why(wc) and current['generation'] == generation
+                and current['account'] == account and current['context'] == context)
+
+    if not still_bound():
         return CLOSED
+    api = wc.api_factory(account)
     try:
-        await wc.send(api, text, generation)
+        await wc.send(api, text, generation, file_binding={'account': account, 'context': context}, valid=still_bound)
     except Exception as exc:  # only explicit rejection may advance to the next channel
-        if getattr(exc, 'code', None) in ('context_rejected', 'no_context', 'stopped'):
+        if getattr(exc, 'code', None) in ('context_rejected', 'no_context', 'stopped', 'file_binding_changed'):
             return CLOSED
         return UNKNOWN
     return ACCEPTED
@@ -115,7 +121,7 @@ async def _mail(host, subject, text, live):
     return await asyncio.to_thread(_mail_send, host, subject, text, live)
 
 
-async def deliver(host, event, pending):
+async def deliver(host, event, pending, *, login=False):
     order = channels(host.preferences)
     if not order or not pending():
         return
@@ -128,7 +134,11 @@ async def deliver(host, event, pending):
         return
     history[event] = now
     subject = pick(host.lang, 'Agent J 有一张卡片等你处理', 'An Agent J card is waiting')
-    text = pick(host.lang, '请在已配对的遥控器上打开 Agent J 处理。', 'Open Agent J on your paired remote to review the card.')
+    if login:
+        text = pick(host.lang, '请在原配对遥控器打开 Agent J，查看登录卡或重新获取登录码。',
+                    'Open Agent J on the original paired remote to review the sign-in card or get a fresh code.')
+    else:
+        text = pick(host.lang, '请在已配对的遥控器上打开 Agent J 处理。', 'Open Agent J on your paired remote to review the card.')
     providers = {'wechat': _wechat, 'telegram': _telegram, 'mail': _mail}
     for channel in order:
         def live(channel=channel):

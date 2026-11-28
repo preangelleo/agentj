@@ -1,0 +1,71 @@
+{
+ "schema": "agentj.news/v1",
+ "version": "0.30.80",
+ "items": [
+  {
+   "zh": {
+    "what": "后台任务完成提示会跨主机重启和升级保留。主会话空闲时补送，确认收到后才结清。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Background completion notices survive a host restart or update. Agent J delivers them when your main session is idle and keeps them until receipt is confirmed.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "切换 AI 工具、压缩对话、紧急修复或升级后，Agent J 会继续已确认尚未提交的任务，并在原回执上更新状态。已经开始但结果未知的任务会留待核对。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "After you switch AI tools, compact a conversation, repair the host, or update, Agent J resumes tasks it can verify were still waiting and updates the original receipt. Started tasks with an unknown outcome stay pending review.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "经 Agent J 上传 YouTube 视频时，每次上传都会在已配对遥控器显示文件、标题和可见性，并等待批准。如果上传回执丢失，Agent J 会先核对原上传状态。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Every YouTube upload through Agent J shows the file, title, and visibility on a paired remote and waits for approval. If the upload receipt is lost, Agent J checks the original upload status first.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "主机体检分别报告主 Agent 核心文件完整性问题和工作目录配置问题。窄屏上的 sudo 和升级审批卡也更容易操作。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Host diagnostics now distinguish main Agent file integrity issues from working folder configuration issues. Sudo and update approval cards are easier to use on narrow screens.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "Mac 按站点授权的首批范围仅限查询。0.30.80 保留预览，真实设备验收后再开放。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "The first Mac website access actions are read-only. Version 0.30.80 keeps the feature in preview pending verification on a real device.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  }
+ ]
+}

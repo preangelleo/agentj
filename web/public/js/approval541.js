@@ -28,6 +28,7 @@ export function warnText(src){
 export function reset(){
  el('apprAllow').setAttribute('aria-label',t('r.appr.allowAria'));
  active=false;current=null;el("sheet").removeAttribute("data-approval-v");
+ el('sheet').removeAttribute('data-youtube-upload');
  for(const id of ['warn541','source541','action541','details541','doubt541c'])el(id).hidden=true;
  el('apprBtns').classList.remove('buttons541c');
  for(const [id,mark] of homes){const n=el(id);if(n.parentNode===el('details541'))mark.after(n);}
@@ -37,6 +38,8 @@ export function paint(p, options){
  if(!enabled(p)){reset();return;}
  active=true;current=p;hooks=options;el("sheet").dataset.approvalV="2";
  const e=p.envelope||{},src=e.source||{},outside=src.history_outside_window===true;
+ if(p.envelope_verified===true&&p.tool==='agentj google youtube upload'&&e.action===p.tool)el('sheet').setAttribute('data-youtube-upload','');
+ else el('sheet').removeAttribute('data-youtube-upload');
  // 0.30.7 ADR-0307-offlist: the host's typed label. A host turn (heartbeat, system notice, own scheduled task) is
  // 「已核实 · 主机」: never painted as an external / unknown source. Display only — Allow rules never read it.
  const typed=typeof src.source_label==='string'&&src.source_label?((lang()==='en'&&src.source_label_en)||src.source_label):'';
@@ -63,12 +66,12 @@ export function paint(p, options){
  el('sheetTitle').textContent=stepTitle(e,t('p336.faTitle'),p);
  if(friendsTellCard(e,p))el('apprAllowLbl').textContent=lang()==='en'?'Verify · send once':'验证并仅发送这一次';
  el('apprAllow').setAttribute('aria-label',friendsTellCard(e,p)?el('apprAllowLbl').textContent:t('r.appr.allowAria'));
- el('askText').textContent=t('p541.wait');el('askTags').hidden=true;el('cmdToggle').hidden=true;el('goalInfo').hidden=true;
+ el('askText').textContent=options.actionable===false?'':t('p541.wait');el('askTags').hidden=true;el('cmdToggle').hidden=true;el('goalInfo').hidden=true;
  for(const id of ['apprBatch','apprGoalAdd','apprKbd','cmdCopy'])el(id).hidden=true;
  const task=el('apprTask');if(task)task.hidden=true;
  const other=el('sheet').querySelector('.elsewhere');if(other)other.hidden=true;
- el('apprBtns').classList.add('buttons541c');
- el('doubt541c').hidden=false;el('doubt541c').disabled=options.busy;
+ if(options.actionable===false)el('apprBtns').classList.remove('buttons541c');else el('apprBtns').classList.add('buttons541c');
+ el('doubt541c').hidden=options.actionable===false;el('doubt541c').disabled=options.busy||options.actionable===false;
  // @ix appr.question
  el('doubt541c').onclick=()=>review(p,'question',options);
  if(p.envelope_verified!==true||p.review_state==='questioned')el('apprAllow').disabled=true;
@@ -96,8 +99,10 @@ export function reopenButton(box,page,lookup,options){
  const ref=page.card?.approval_reopen,id=typeof ref==='string'?ref:ref?.id;
  if(!/^[a-f0-9]{32}$/.test(id||''))return false;
  const p=lookup(id)||specialApprovalById(id);if(!p||['denied','approved','terminal','stopped','ended'].includes(p.state))return false;
+ if(p.state==='timeout'&&!p.renewable)return false;
+ const op=p.state==='expired'||p.state==='timeout'?'renew':'reopen';
  if(box.id!=='words')box.replaceChildren();box.hidden=false;
  const b=text('button','aj-btn aj-btn--primary',t('p541.reopen'));b.type='button';b.id='reopen541';
  // @ix appr.reopen
- b.onclick=()=>p.review_kind==='special'?reviewSpecial(p,p.state==='expired'?'renew':'reopen'):review(p,p.state==='expired'?'renew':'reopen',options);box.append(b);return true;
+ b.onclick=()=>p.review_kind==='special'?reviewSpecial(p,op):review(p,op,options);box.append(b);return true;
 }

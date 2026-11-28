@@ -4,7 +4,8 @@
   and the way-back check, before the config changes, the harness being left gets one host turn (`harness_handoff` write) and
   writes switch.md where the host said — `<working root>/.agentj/handover/switch.md` (independent) or
   `~/.local/state/agentj/handoff/switch.md` (shared); the new harness's 「自报家门」 names that file first (handoff "ok"),
-  then one more host turn (`resume`) carries on from it. Switching back (A → B → A) works the same way.
+  and the receipt identifies the checkpoint gate. Context alone never causes a task send. Switching back (A → B → A)
+  works the same way.
 - Not written (missing / unchanged / timed out / refused by an older serve): the switch still happens, the owner gets the
   「这次没写成交接」 line, the new harness is told there is none, no resume turn, and an old switch.md is never pointed at.
 - Dry run / a failed gate / no way back: no handoff turn at all.
@@ -121,8 +122,7 @@ class Job(unittest.TestCase):
             self.assertEqual(f, pathlib.Path(self.tmp.name) / "work" / ".agentj" / "handover" / "switch.md")
             self.assertEqual(oct(f.parent.stat().st_mode & 0o777), "0o700")
         self.assertTrue(f.read_text().startswith("# Handoff"))
-        # the writing turn ran on the harness being left, while the config still named it; the resume on the new one
-        self.assertEqual(fake.handoffs, [(frm, "write", frm), (to, "resume", to)])
+        self.assertEqual(fake.handoffs, [(frm, "write", frm)])
         hello = [r for r in fake.calls if r["cmd"] == "harness_hello"]
         self.assertEqual(hello, [{"cmd": "harness_hello", "outcome": "ok", "from": frm, "to": to, "handoff": "ok"}])
         write = dict(fake.texts)["write"]
@@ -130,15 +130,15 @@ class Job(unittest.TestCase):
         self.assertIn(handoff.switch_where(st.agent_config()), write)
         hello_text = dict(fake.texts)["hello"]
         self.assertIn("先完整读交接文件 " + handoff.switch_where(st.agent_config()), hello_text)
-        self.assertIn(handoff.switch_where(st.agent_config()), dict(fake.texts)["resume"])
+        self.assertEqual(sw.read_receipt(st)["task_resume"], "checkpoint")
         self.assertEqual([p for p in fake.phases if p in OWN_PHASES], ["probe_back", "handoff", "handoff_ok"])
         # P290 merge with P281: one ordered stream of phases for the owner
         self.assertEqual(fake.phases, ["probing", "probe_back", "waiting", "handoff", "handoff_ok", "switching", "switched"])
-        # order: gate → way back → handoff → config change → restart → hello → resume
+        # Gate → way back → handoff → config change → restart → hello. Task delivery needs separate proof.
         cmds = [r["cmd"] + ":" + r.get("step", r.get("phase", "")) for r in fake.calls if r["cmd"] != "status"
                 and not (r["cmd"] == "harness_progress" and r.get("phase") not in OWN_PHASES)]   # P281's phases: its own test
         self.assertEqual(cmds, ["harness_progress:probe_back", "harness_progress:handoff", "harness_handoff:write", "harness_progress:handoff_ok",
-                                "harness_hello:", "send:", "harness_handoff:resume"])
+                                "harness_hello:"])
         log = st.log_path.read_text()
         self.assertIn('"ev": "harness_handoff"', log)
         self.assertNotIn("做 P289", log)
@@ -163,7 +163,7 @@ class Job(unittest.TestCase):
         first = self.where(st).read_text()
         time.sleep(0.02)
         self.assertEqual(self.run_job(st, fake, "claude"), 0)        # back: OpenCode writes, Claude Code reads
-        self.assertEqual(fake.handoffs[2:], [("opencode", "write", "opencode"), ("claude", "resume", "claude")])
+        self.assertEqual(fake.handoffs[1:], [("opencode", "write", "opencode")])
         self.assertIn("<!-- merged -->", self.where(st).read_text())
         self.assertIn(first, self.where(st).read_text())
         self.assertEqual([r for r in fake.calls if r["cmd"] == "harness_hello"][-1]["handoff"], "ok")
@@ -173,8 +173,8 @@ class Job(unittest.TestCase):
         fake = HandoffServe(st, "claude")
         self.assertEqual(self.run_job(st, fake, "codex", force=True), 0)
         self.assertEqual(self.run_job(st, fake, None, undo=True), 0)
-        self.assertEqual([h[:2] for h in fake.handoffs], [("claude", "write"), ("codex", "resume"),
-                                                          ("codex", "write"), ("claude", "resume")])
+        self.assertEqual([h[:2] for h in fake.handoffs], [("claude", "write"), ("codex", "write")])
+        self.assertTrue(sw.read_receipt(st)["undo"])
 
     def check_not_written(self, st, fake, result):
         self.assertEqual(st.agent_config()["kind"], "codex", "switched anyway")
@@ -234,7 +234,8 @@ class Job(unittest.TestCase):
         fake = FakeServe(st, "claude")               # no harness_handoff, no harness_progress
         self.assertEqual(self.run_job(st, fake, "codex"), 0)
         self.assertEqual(st.agent_config()["kind"], "codex")
-        self.assertEqual(len(fake.sent), 2)  # P529: handoff failure + final switch receipt
+        self.assertEqual(len(fake.sent), 1)  # Legacy text is only the failed handoff notice.
+        self.assertEqual(sw.read_receipt(st)["status"], "ok")
         self.assertTrue(fake.sent[0].startswith("这次没写成交接"), fake.sent)
         self.assertIn('"result": "refused"', st.log_path.read_text())
 
@@ -242,8 +243,9 @@ class Job(unittest.TestCase):
         st = mk_state(self.tmp.name, "claude")
         fake = HandoffServe(st, "claude", writes=False)
         self.run_job(st, fake, "codex")
-        self.assertEqual(len(fake.sent), 1, "P529: one final receipt, no duplicate handoff message")
-        self.assertIn("✓", fake.sent[0])
+        self.assertFalse(fake.sent, "Progress and the dedicated receipt must not use the text broadcast.")
+        rec = sw.read_receipt(st)
+        self.assertEqual((rec["status"], rec["handoff"]), ("ok", "missing"))
 
     def test_dry_run_and_target_failure_do_not_handoff_broken_original_can_escape(self):
         st = mk_state(self.tmp.name, "claude")

@@ -1,3 +1,4 @@
+import { observeSpecial, visible } from './card-receipt.js';
 import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refreshSpecialVisibility } from './approval-special541.js';
 import { authOf, paintAuth } from './authcard.js';
 import {phoneConfirmation} from './tvremote.js';
@@ -227,6 +228,16 @@ export function add(m) {
   if (c.started && old?.watching && runShown === c.id && panelOpen) watch(c, true);   // a reconnect: ask again (a new session)
   if (old && shownId === m.id && !same) { shownId = null; busy = false; }
   render();
+  if (c.kind === 'sudo' && !c.running && m.delivery) {
+    observeSpecial(m, () => {
+      const active = cards.get(m.id);
+      return active?.n === m.n && !active.running && active.review_state !== 'questioned' && active.deadline > Date.now();
+    }, () => {
+      const active = cards.get(m.id);
+      const action = root.querySelector(active?.approval_v === 2 ? '.auth-action541' : '#elev-rows .purpose');
+      return shownId === m.id && canSpecialApprove(active) && visible($('elev-title')) && visible(action);
+    });
+  }
 }
 /** P527: a settings tap owns the visible input, even if an older card was collapsed or waiting. */
 export function openSecret(m) {
@@ -390,6 +401,7 @@ function render() {
     resetFields();
     root.toggleAttribute('data-multi-secret', !!c.names);
     const sudo = c.kind === 'sudo', vs = c.kind === 'vshare';
+    root.toggleAttribute('data-sudo', sudo);
     const nopw = viaHelper(c) || vs;
     root.classList.toggle('nopw', nopw);
     root.classList.toggle('interpreter', !!c.interpreter);

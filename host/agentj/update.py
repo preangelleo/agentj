@@ -1111,6 +1111,7 @@ def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
         labels = {"version": ("程序版本", "program version"), "python": ("运行环境", "runtime"),
                   "service": ("后台服务", "background service"), "serve": ("后台连接", "host connection"),
                   "relay": ("中继连接", "relay connection"), "main-core": ("Agent 身份", "Agent identity"),
+                  "main-config": ("Agent 配置与工作目录", "Agent configuration and working folder"),
                   "main-inject": ("Agent 身份加载", "Agent identity loading"), "state": ("本机数据目录", "local data folder"),
                   "upgrade-restart": ("升级重启", "upgrade restart"), "dashboard": ("账户连接", "account connection"),
                   "platform": ("操作系统", "operating system"), "config": ("程序配置", "configuration"),
@@ -1175,7 +1176,7 @@ def doctor_counts(rows) -> tuple[int, int, int] | None:
 
 # Installation/runtime integrity failures block an upgrade. Owner workflow/config
 # findings remain visible but must not turn a verified installation into failure.
-UPGRADE_CHECKS = frozenset(("version", "python", "platform", "state", "relay", "dashboard", "service", "serve", "upgrade-restart", "main-core", "main-inject"))
+UPGRADE_CHECKS = frozenset(("version", "python", "platform", "state", "relay", "dashboard", "service", "serve", "upgrade-restart", "main-core", "main-config", "main-inject"))
 
 def upgrade_health(rows):
     blockers, existing = upgrade_blockers(rows)

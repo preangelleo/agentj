@@ -7,7 +7,7 @@ import sys
 from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import AsyncMock, patch
-from agentj import application_ingress as entry, codex_procs, provenance, serve
+from agentj import application_ingress as entry, approvals, codex_procs, provenance, serve
 import test_uv_list as uv_fixture
 
 
@@ -195,18 +195,35 @@ s.close()
             self.assertFalse(self.h.asks)
         await self.frame(control)
 
-    async def test_google_and_plaza_ordinary_ack_are_not_signature_proofs(self):
+    async def test_google_ordinary_ack_does_not_supply_plaza_signature(self):
         from agentj import google_api, plaza_perms
         async def control(s, obj):
-            for tool in google_api.TOOLS.values():
-                result = await google_api.card(self.h, self.st, tool, 'Synthetic nonsecret request')
+            # YouTube upload is now a listed per-request card. Its paired decision
+            # and provider effect are covered by test_0380_ulz0's native socket journey.
+            for op in ('gmail_send', 'drive_upload'):
+                result = await google_api.card(self.h, self.st, google_api.TOOLS[op], 'Synthetic nonsecret request')
                 self.assertTrue(result['ok'], result)
                 self.assertFalse(set(result) & {'grant_info','device','rid','sig','uv'})
-            result = await plaza_perms._signed_card(self.h, 'fixture', {'items':[]}, None)
-            self.assertTrue(result['ok'], result)
-            self.assertFalse(set(result) & {'grant_info','device','rid','sig','uv'})
             self.assertFalse(self.h.asks)
-        await self.frame(control)
+            return await plaza_perms._signed_card(self.h, 'fixture', {'items':[]}, None)
+
+        task = asyncio.create_task(self.frame(control))
+        try:
+            for _ in range(100):
+                if self.h.asks or task.done():
+                    break
+                await asyncio.sleep(.005)
+            self.assertFalse(task.done())
+            ask, = self.h.asks.values()
+            self.assertEqual(ask.tool, plaza_perms.CARD_TOOL)
+            await self.h._answer(self.s, self.ph.answer(self.h._ask_msg(ask, self.s), False))
+            await task
+            record = next(r for r in reversed(approvals.read_log(self.st)) if r.get('tool') == plaza_perms.CARD_TOOL)
+            self.assertEqual((record['decision'], record['reason']), ('deny', 'device'))
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     async def test_worker_handoff_rechecks_frame_after_revocation(self):
         import threading

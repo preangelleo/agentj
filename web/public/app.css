@@ -2771,6 +2771,7 @@ body:has(>.gdlg:not([hidden])) .ajmodal.hlp{z-index:104}   /* P549 (#316): help 
 .setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--state);border-radius:8px 0 0 8px}
 .setup-note{margin:var(--sp-3) 0 0;white-space:pre-wrap}
 .setup-actions{--aj-action-min-height:56px;--aj-icon-action-min-height:56px;--aj-navigation-action-min-height:56px;display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+#confirm[data-kind="upg"] #confirm-no{background:var(--lotion);color:var(--noir);border-color:var(--lotion)}
 .setup-actions .aj-action{flex:var(--aj-action-flex,1 1 9rem);min-height:var(--aj-action-min-height,56px);margin-top:var(--aj-action-margin-top,0);white-space:var(--aj-action-white-space,normal)}
 /* #577 aj-icon-action: independent equal initial contract. */
 .setup-actions .aj-icon-action{flex:var(--aj-icon-action-flex,1 1 9rem);min-height:var(--aj-icon-action-min-height,56px);margin-top:var(--aj-icon-action-margin-top,0);white-space:var(--aj-icon-action-white-space,normal)}
@@ -4789,6 +4790,29 @@ body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 /* Metadata fields keep their own inset and a complete, independently rounded copy control. */
 .elev .elev-rows dd.mono.cc-in{min-height:calc(var(--ui-tap) + 2 * var(--sp-2));padding-right:calc(var(--ui-tap) + 2 * var(--sp-2));display:flex;align-items:center}
 .elev .cc-in>.cc-btn{width:var(--ui-tap);height:var(--ui-tap);top:var(--sp-2);right:var(--sp-2);border-radius:var(--r-md)}
+/* These approvals grow from the waterline and use Lotion foreground in both themes. */
+:is(#sheet[data-youtube-upload],#elev[data-sudo])[data-popup-system="grow"]{
+  --ink:var(--lotion);--ink-soft:var(--lotion);
+}
+#sheet[data-youtube-upload][data-popup-system="grow"]{
+  --surface:rgb(from var(--sooty) r g b / .25);
+  --aj-approval-command-tool-color:var(--lotion);
+  --aj-approval-command-tool-background:var(--noir);
+}
+#elev[data-sudo].aj-shared-popup[data-popup-system="grow"]>.box{
+  --text:var(--lotion);--text-muted:var(--lotion);--accent:var(--lotion);--c-danger:var(--lotion);
+  padding-block:var(--ui-space-content) var(--sp-3);
+}
+#elev[data-sudo] .elev-input{caret-color:var(--lotion)}
+#elev[data-sudo] .elev-input::placeholder{color:var(--lotion)}
+#elev[data-sudo] .elev-input::selection{color:var(--lotion);background:var(--black-mana)}
+#elev[data-sudo] #elev-kicker[data-aj-owner="aj-auth-card"]{min-height:var(--ui-tap)}
+#elev[data-sudo] #elev-hide[data-aj-owner="aj-auth-card"]{top:var(--ui-space-content)}
+#elev[data-sudo] #elev-rows,#elev[data-sudo] .elev-acts{margin-top:var(--sp-2)}
+#elev[data-sudo] .elev-rows dt:not(:first-child){margin-top:var(--sp-1)}
+#elev[data-sudo] #elev-label[data-aj-owner="aj-auth-card"]{margin-top:var(--sp-3)}
+#elev[data-sudo] .elev-acts>.aj-action{padding-block:var(--sp-2)}
+#elev[data-sudo] #elev-deny[data-aj-owner="aj-action"]{background:var(--noir);color:var(--lotion);border-color:var(--noir)}
 /* U10: result notices follow the existing popup by one visual layer. */
 :is(#toast,#notice-fifo[data-aj-owner="aj-notice"]).on[data-popup-notice="1"]:not([data-preview-failure="1"]){z-index:var(--aj-notice-popup-z)!important}
 

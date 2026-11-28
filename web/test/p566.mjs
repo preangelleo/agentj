@@ -160,13 +160,33 @@ try {
   await C('#364 approval card: a Face ID approval survives the drop → the signed answer on the new connection', async () => {
     const p = await paired();
     const ask = { id: hex(16), tool: 'Bash', summary: 'rm -rf build/', passkey_required: true, fa: CRED, fa_s: 'local', fa_ch: b64u(new Uint8Array(32).fill(1)) };
+    await fake.ask(ask);
+    await waitFor(p, `import('./js/snap.js').then(s=>s.S.asks.has('${ask.id}'))`);
     await evaluate(p, 'window.__get.hold = true');
-    await evaluate(p, `window.__ap = import('./js/api.js').then((a) => a.approve(${JSON.stringify(ask)}, 'allow')); true`);
+    await evaluate(p, `window.__ap = Promise.all([import('./js/api.js'), import('./js/snap.js')]).then(([a,s]) => a.approve(s.S.asks.get('${ask.id}'), 'allow')); true`);
     await dropDuringSheet(p);
     await evaluate(p, 'window.__get.release()');
+    await sleep(300);
+    assert.equal(got('answer', ask.id).length, 0, 'the reconnect has not reoffered the request yet');
+    await fake.ask(ask);
     assert.deepEqual(await evaluate(p, 'window.__ap'), { ok: true });
     const [a] = got('answer', ask.id);
     assert.ok(a && a.id === ask.id && a.ok === true && a.fa && a.fa.id === CRED);
+    await p.close();
+  });
+
+  await C('RTAJ: an approval that expires while the passkey sheet is open never sends an answer', async () => {
+    const p = await paired();
+    const ask = { id: hex(16), tool: 'Bash', summary: 'Check a draft', ttl: 120, passkey_required: true,
+      fa: CRED, fa_s: 'local', fa_ch: b64u(new Uint8Array(32).fill(1)) };
+    await fake.ask(ask);
+    await waitFor(p, `import('./js/snap.js').then(s=>s.S.asks.has('${ask.id}'))`);
+    await evaluate(p, 'window.__get.hold = true');
+    await evaluate(p, `window.__ap = Promise.all([import('./js/api.js'), import('./js/snap.js')]).then(([a,s]) => a.approve(s.S.asks.get('${ask.id}'), 'allow')); true`);
+    await waitFor(p, 'window.__get.n === 1 && !!window.__get.release');
+    await evaluate(p, 'Date.now = (() => { const now = Date.now; return () => now() + 121000; })(); window.__get.release()');
+    assert.deepEqual(await evaluate(p, 'window.__ap'), { ok: false, why: 'request_ended' });
+    assert.equal(got('answer', ask.id).length, 0);
     await p.close();
   });
 

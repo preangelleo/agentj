@@ -10,7 +10,7 @@ import weakref
 
 from cryptography.exceptions import InvalidSignature
 
-from . import compose, diskq, history, humane, phone_update, provenance, service_recovery, silent, wire
+from . import compose, diskq, history, humane, phone_update, provenance, service_recovery, silent, task_resume, wire
 from .text import drop_replacement
 
 DOMAIN = b"agentj:upgrade-held-phone-say:v1\x00"
@@ -105,7 +105,7 @@ def pending(st):
             and 0 <= time.time() - record["at"] <= service_recovery.READY_LIMIT + 300)
 
 
-def binding(host, session, sid, page):
+def binding(host, session, sid, page, checkpoint=None):
     phone = getattr(session, "login_phone", None)
     if phone is None or not phone.revision or not phone.matches(host, session):
         return None
@@ -117,21 +117,36 @@ def binding(host, session, sid, page):
         stop_generation = None
     except OSError:
         return None
-    return DOMAIN + json.dumps([host.channel, wire.b64u(host.kp.pub), session.device, wire.b64u(phone.sign), stop_generation,
-                                phone.revision, host.hist.epoch, page["id"], page["ts"], sid, page["src"]],
-                               ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    coordinates = [host.channel, wire.b64u(host.kp.pub), session.device, wire.b64u(phone.sign), stop_generation,
+                   phone.revision, host.hist.epoch, page["id"], page["ts"], sid, page["src"]]
+    if checkpoint is not None:
+        coordinates.append(checkpoint)
+    return DOMAIN + json.dumps(coordinates, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
 
 
 async def hold(host, session, sid, text):
     """No model, peer workflow, approval or native route has seen this message."""
     phone = getattr(session, "login_phone", None)
     if (provenance._paired_source() != provenance.phone() or not host.hist.on or phone is None
-            or not pending(host.st) or not phone.revision or not phone.matches(host, session)):
+            or not phone.revision or not phone.matches(host, session)):
         return None
+    scope = task_resume.transition(host)
+    if scope is None and not pending(host.st):
+        return None
+    kind = getattr(host.agent, "kind", None)
+    workspace = task_resume.workspace(host)
+    # Legacy receivers still understand the existing upgrade proof. New transition
+    # checkpoints require the workspace and harness to be ascertainable.
+    if scope and not workspace:
+        return {"ok": False, "why": "other"}
+    checkpoint = ({"transition": scope or ["upgrade", kind], "workspace": workspace}
+                  if workspace and kind else None)
     src = {"k": "phone", "dev": session.device, "name": (session.name or session.device)[:64],
            "text": text, "source_kind": "phone", "source_role": "owner"}
+    if scope and scope[0] == "switch":
+        src["switch_resume_job"] = scope[1]
     page = host.hist_add(src, "", "open", card={"queued": True})
-    payload = binding(host, session, sid, page)
+    payload = binding(host, session, sid, page, checkpoint)
     if payload is None:
         host.hist_update(page["id"], end="failed", text=humane.of(host, "say.restart_lost"))
         return {"ok": False, "why": "not_paired"}
@@ -143,7 +158,8 @@ async def hold(host, session, sid, text):
     send = compose.Send(session.device, sid, page["id"])
     host.sends.add(send)
     coordinates = _page_coordinates(host.hist, page, session.device)
-    write = host.receipts.mark(session.device, sid, "held", page["id"], seal=seal, reply_page=coordinates)
+    write = host.receipts.mark(session.device, sid, "held", page["id"], seal=seal, reply_page=coordinates,
+                               checkpoint=checkpoint)
     if write is None or not await asyncio.wrap_future(write) or not host.hist.last_write_ok or not await diskq.aflush():
         fail(host, session.device, sid, page, coordinates)
         return {"ok": False, "why": "other"}
@@ -160,14 +176,18 @@ def fail(host, device, sid, page, coordinates):
             and matches_reply_page(host.hist, page, device, coordinates)):
         if page["end"] == "open":
             host.hist_update(page["id"], text=text, end="failed", card={})
+            if job := page["src"].get("switch_resume_job"):
+                from . import switch_report
+                switch_report.watch(host, job)
     else:
         host.hist_add({"k": "sys", "text": ""}, text, "done")
 
 
 async def resume(host):
     """Use the remaining authenticated session; never create a substitute owner."""
-    if not host.agent or pending(host.st):
+    if not host.agent or pending(host.st) or task_resume.transition(host):
         return
+    agent = host.agent
     for device, sid in list(host.receipts.items):
         row = host.receipts.items.get((device, sid))
         if row is None or row["s"] != "held":
@@ -177,7 +197,8 @@ async def resume(host):
         # A disconnected device may return. A revoked one cannot.
         if session is None and device in host.st.devices() and time.time() - row["t"] <= MAX_AGE:
             continue
-        proof = binding(host, session, sid, page) if session and page else None
+        checkpoint = row.get("checkpoint")
+        proof = binding(host, session, sid, page, checkpoint) if session and page else None
         current = (page and page["end"] == "open" and not page["reply"].get("text") and host.hist.on
                    and 0 <= time.time() - page["ts"] / 1000 <= MAX_AGE)
         verified = False
@@ -189,7 +210,8 @@ async def resume(host):
                 pass
         # Legacy rows can acquire page coordinates only from the verified sealed handoff.
         coordinates = _page_coordinates(host.hist, page, device) if verified else row.get("reply_page")
-        if not verified or host.stopped() or host.seat_refusal():
+        if (not verified or host.stopped() or host.seat_refusal()
+                or "checkpoint" in row and not task_resume.permits(host, checkpoint)):
             fail(host, device, sid, page, coordinates)
             continue
         # Acquire synchronously before awaiting IO: concurrent reconnects can never submit twice.
@@ -197,14 +219,18 @@ async def resume(host):
         if write is None or not await asyncio.wrap_future(write):
             fail(host, device, sid, page, coordinates)
             continue
-        if binding(host, session, sid, page) != proof or host.stopped() or host.seat_refusal():
+        if (binding(host, session, sid, page, checkpoint) != proof or host.stopped() or host.seat_refusal()
+                or checkpoint is not None and not task_resume.permits(host, checkpoint)):
             fail(host, device, sid, page, coordinates)
             continue
         # The platform holds the original authenticated words, never an approval.
         placeholder = host.sends.get(device, sid)
 
-        def allowed(session=session, placeholder=placeholder, page=page, sid=sid, proof=proof):
-            return (binding(host, session, sid, page) == proof and not host.stopped() and not host.seat_refusal()
+        def allowed(session=session, placeholder=placeholder, page=page, sid=sid, proof=proof, checkpoint=checkpoint):
+            return (host.agent is agent and binding(host, session, sid, page, checkpoint) == proof
+                    and not host.stopped() and not host.seat_refusal()
+                    and not pending(host.st) and not task_resume.transition(host)
+                    and (checkpoint is None or task_resume.permits(host, checkpoint))
                     and host.hist.get(page["id"]) is page and page["end"] == "open"
                     and (placeholder is None or placeholder.state != "cancelled"))
 

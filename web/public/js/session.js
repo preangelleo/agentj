@@ -85,7 +85,7 @@ let refusals = 0, removalProbe = false;
 // A transport refusal may offer an owner-initiated passkey check; only an authenticated frame can revoke access.
 export const repeatedRefusals = () => refusals >= 2;
 export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, wxfwd: false, wxbound: false, tgbound: false, wxknown: false, tgknown: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
-const CLIENT_CAPS = Object.freeze(['p33', 'lt1', 'pair1', 'card_receipt1', 'card_ask_receipt1']);
+const CLIENT_CAPS = Object.freeze(['p33', 'lt1', 'pair1', 'card_receipt1', 'card_ask_receipt1', 'card_special_receipt1']);
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -228,6 +228,7 @@ function readCaps(m) {
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
   peer.cardReceipt1 = peer.p33 && m.mode !== 'rescue' && m.caps.includes('card_receipt1');
   peer.cardAskReceipt1 = peer.p33 && m.mode !== 'rescue' && m.caps.includes('card_ask_receipt1');
+  peer.cardSpecialReceipt1 = peer.cardReceipt1 && m.caps.includes('card_special_receipt1');
   peer.wxbound = peer.p33 && Array.isArray(m.caps) && m.caps.includes('wxbound');
   peer.tgbound = peer.p33 && Array.isArray(m.caps) && (m.caps.includes('tgbound') || m.caps.includes('tgfwd'));
   peer.wxknown = peer.tgknown = false;   // P569: caps are a guess; only the channel's own status (wechat.js) says it is unbound

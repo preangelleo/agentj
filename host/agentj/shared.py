@@ -1288,6 +1288,10 @@ class SharedClaudeAgent(Agent):
                     self.last_phone_prompt = None       # P539: a desktop prompt — no phone words to put back
             if self.phone_turn and self.pending_text == str(event.get("prompt", "")):
                 self.last_phone_prompt = getattr(self, "cur_send", None)   # P539: the words a flag can hand back
+                if not event.get("agent_id") and getattr(self.cur_send, "await_background_readback", False):
+                    readback = getattr(self.host, "background_done_readback", None)
+                    if readback:
+                        readback(self.cur_send)
                 self.phone_seen = True
                 self.input_seen.set()
                 prov = provenance.hook_context(self.pending_source)
@@ -2657,6 +2661,8 @@ class SharedClaudeAgent(Agent):
                     receipt = shared_turn_origin.received(self, item, text)
                     delivery_echo = shared_turn_origin.delivered(self, item, text)
                     if receipt or delivery_echo:
+                        if getattr(self.cur_send, "await_background_readback", False):
+                            self.host.background_done_readback(self.cur_send)
                         self.stop_since_end = False
                         self._turn_begins(item.get("promptId"))  # pre-delivery prose cannot answer this Send
                         self.receipt_gen = self.turn_gen
@@ -3345,6 +3351,8 @@ class SharedClaudeAgent(Agent):
         self.pending_source = self.native_source = source
         self.pending_text = provenance.body(text, source)   # what the transcript / prompt will show
         self.native_request = shared_turn_origin.mint(self, self.cur_send, self.pending_text)
+        if getattr(self.cur_send, "background_done_ids", None):
+            self.cur_send.await_background_readback = True
         if not provenance.is_owner(source):
             self._mark_untrusted("pending")
         try:

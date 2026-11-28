@@ -43,6 +43,17 @@ class DictionaryCodec(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.decode(raw)
 
+    def test_pronunciation_lookback_reuses_only_available_records(self):
+        words = b'\x80A\x81B\x81C\x81D\x81E'
+        sounds = b'\x84\x01\x84\x02\x89\x02\x84\x02\x8b'
+        self.assertEqual(self.decode(frame(words, sounds, magic=b'AJP4', count=5)),
+                         b'A AA\nAB B\nAC AA B\nAD B\nAE AA\n')
+        for invalid in (b'\x85\x01\x84\x02', b'\x84\x01\x8b',
+                        b'\x84\x01\x8c', b'\x84\x01\x80\x02'):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, 'pronunciation (?:reference|prefix)'):
+                    self.decode(frame(words[:4], invalid, magic=b'AJP4'))
+
     def test_original_hash_and_all_rows_are_unchanged(self):
         raw = wake.dictionary_bytes()
         self.assertEqual(len(raw), 3330061)

@@ -1850,7 +1850,10 @@ def check_main_identity(st):
     rows = []
     try:
         version = main_identity.verify_core()["version"]
-        rows.append(_c("main-core", OK, f"Packaged EN/ZH main-Agent core v{version}: pinned hashes verified"))
+    except main_identity.IdentityError:
+        return [_c("main-core", FAIL, "Packaged main-Agent core integrity failed", "Repair with a trusted package from agentj.app")]
+    rows.append(_c("main-core", OK, f"Packaged EN/ZH main-Agent core v{version}: pinned hashes verified"))
+    try:
         cfg = st.agent_config() if st.exists() else None
         pref = preferences.get(preferences.effective(st), "agent.working_root", "")
         old = st.config().get("agent", {}).get("dir") if st.exists() else None
@@ -1908,10 +1911,11 @@ def check_main_identity(st):
             rows.append(_c("main-inject", status, detail, "从手机发一句话 / Send a message from your phone" if waiting else "Restart serve and send a message" if not ok else ""))
             if old and str(pathlib.Path(old).resolve()) != str(root):
                 rows.append(_c("root-migrate", WARN, "Old files were kept in the previous work folder", "Review CEO roster and paths; no automatic move"))
-    except PermissionError as e:   # ADR-0269-fenced-doctor: the core already verified above; the work-root part could not read
-        rows.append(_denied("work-root", e) if rows else _denied("main-core", e))
+    except PermissionError as e:   # ADR-0269-fenced-doctor: package identity has already been verified.
+        rows.append(_denied("main-config", e))
     except (main_identity.IdentityError, preferences.ConfigError, OSError, ValueError):
-        rows.append(_c("main-core", FAIL, "Main-Agent core or root configuration integrity failed", "Reinstall the trusted package; agentj config validate --json"))
+        rows.append(_c("main-config", FAIL, "Main-Agent configuration or working root could not be verified",
+                       "Run agentj config validate --json and check the configured working root"))
     return rows
 
 

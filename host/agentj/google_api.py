@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.client
 import json
 import os
 import re
+import secrets
 import stat
 import sys
 import urllib.parse
@@ -118,8 +120,8 @@ def open_file(st, workdir, path: str, video: bool):
             return None, "private"
         if real == rroot or not M._inside(real, rroot) or not M._inside(raw, os.path.normpath(workdir)):
             return None, "outside"
-        parts = os.path.relpath(real, rroot).split(os.sep)
-        if M._denied(parts) or M._denied(os.path.relpath(raw, os.path.normpath(workdir)).split(os.sep)):
+        parts = os.path.relpath(raw, os.path.normpath(workdir)).split(os.sep)
+        if M._denied(parts) or M._denied(os.path.relpath(real, rroot).split(os.sep)):
             return None, "secret"
         mime = VIDEO.get(os.path.splitext(parts[-1])[1].lower())
         if mime is None:
@@ -137,6 +139,8 @@ def open_file(st, workdir, path: str, video: bool):
                                 (rec["dev"], rec["ino"], rec["bytes"], rec["mtime"])):
             raise ValueError("gone")
         if video:
+            if s.st_nlink != 1:
+                raise ValueError("outside")
             head = os.pread(fd, 16, 0)
             if s.st_size > VIDEO_MAX:
                 raise ValueError("too_big")
@@ -146,6 +150,23 @@ def open_file(st, workdir, path: str, video: bool):
         os.close(fd)
         return None, str(e) if isinstance(e, ValueError) else "gone"
     return (fd, parts[-1][:255], s.st_size, mime), None
+
+
+def _file_state(fd: int) -> tuple:
+    details = os.fstat(fd)
+    return (details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns, details.st_ctime_ns)
+
+
+def _same_upload_file(st, workdir, path, source, approved_state) -> bool:
+    current, _ = open_file(st, workdir, path, video=True)
+    if current is None:
+        return False
+    try:
+        return _file_state(current[0]) == _file_state(source[0]) == approved_state
+    except OSError:
+        return False
+    finally:
+        os.close(current[0])
 
 
 def _secret(index, *texts) -> bool:
@@ -251,10 +272,28 @@ async def card(host, st, tool: str, text: str, zh: bool = True) -> dict:
         text += "\n" + ("来源：" if zh else "Asked during: ") + VIA[via][1 if zh else 0]
     if mail_read(host):
         text += "\n" + MAIL[1 if zh else 0]
-    ans = await host.ask(tool, {"summary": text}, batch=False, grant_info=True, always_ask=True,
-                         _company_proposal=policy_registry.HOST_CARD)
+    per_upload = tool == TOOLS["youtube_upload"]
+    front = None
+    tool_input = {"summary": text}
+    if per_upload:
+        # A questioned card may return through the shared, input-bound resume
+        # path. Each upload invocation must get a separate approval.
+        tool_input["request_nonce"] = secrets.token_hex(16)
+        # File, title and visibility appear on the card before expanding details.
+        # Any longer description or source notes remain in the signed details.
+        rows = text.split("\n", 4)
+        count = 4 if len(rows) > 3 and rows[3].startswith(("定时公开：", "Goes public at: ")) else 3
+        front = {"title": "确认 YouTube 上传", "title_en": "Confirm YouTube upload",
+                 "reason" if zh else "reason_en": "\n".join(rows[:count])}
+    ans = await host.ask(tool, tool_input, batch=False, grant_info=True, always_ask=True,
+                         _company_proposal=policy_registry.HOST_CARD, _front=front)
     from . import application_ingress
     ok = isinstance(ans, dict) and ans.get("behavior") == "allow" and application_ingress.allowed(host)
+    if ok and per_upload:
+        # An ordinary ingress allow carries no paired-device proof.
+        proof = ans.get("grant_info")
+        ok = (isinstance(proof, dict) and bool(proof.get("rid") and proof.get("device") and proof.get("sign_pub"))
+              and st.sign_key(proof["device"]) == proof["sign_pub"])
     st.log("google_api_card", tool=tool, result="allow" if ok else "deny",
            reason=(ans or {}).get("reason") if isinstance(ans, dict) and not ok else None)
     return {"ok": ok}
@@ -265,6 +304,7 @@ async def serve(host, st, req: dict) -> dict:
     bad = shape(req)
     if bad:
         return {"ok": False, "why": "shape", "detail": bad}
+    from . import application_ingress
     op = req["op"]
     no = refusal(getattr(host, "agent", None), host, op, req)
     if no:
@@ -298,12 +338,21 @@ async def serve(host, st, req: dict) -> dict:
     try:
         if f is not None and not req.get("name") and _secret(index, f[1]):    # N-L1: Drive's default name is the basename
             return {"ok": False, "why": "secret", "detail": "a credential is never mailed or published"}
+        approved_file = None
+        if op == "youtube_upload":
+            if not application_ingress.allowed(host):
+                return {"ok": False, "why": "application_ingress_unverified"}
+            approved_file = _file_state(f[0])
         zh = str(getattr(host, "lang", "zh")).startswith("zh")
         if not (await card(host, st, TOOLS[op], summary(op, req, f, zh), zh))["ok"]:
             return {"ok": False, "why": "denied", "detail": "the owner did not allow it on a paired device"}
-        from . import application_ingress
+        def execute():
+            if approved_file is not None and not _same_upload_file(st, workdir, req["file"], f, approved_file):
+                return {"ok": False, "why": "file_changed", "detail": "The file changed before upload. Request a new approval."}
+            return run(st, req, f)
+
         try:
-            return await application_ingress.run(host, run, st, req, f)
+            return await application_ingress.run(host, execute)
         except application_ingress.Expired:
             return {'ok': False, 'why': 'application_ingress_unverified'}
     finally:
@@ -415,24 +464,48 @@ def _youtube_upload(st, req: dict, f) -> dict:
         if tok is None:
             return _paused(st, "youtube-publish", why)
         os.lseek(fd, done, os.SEEK_SET)
-        hdr = {"Authorization": "Bearer " + tok, "Content-Type": mime, "Content-Length": str(size - done)}
+        auth = {"Authorization": "Bearer " + tok}
+        hdr = {**auth, "Content-Type": mime, "Content-Length": str(size - done)}
         if done:
             hdr["Content-Range"] = f"bytes {done}-{size - 1}/{size}"
-        s, rh, raw = go.call("PUT", loc, data=_Reader(fd, size - done), headers=hdr, timeout=600)
-        if s in (200, 201):
-            v = go._json(raw) or {}
+        try:
+            code, headers, raw = go.call("PUT", loc, data=_Reader(fd, size - done), headers=hdr, timeout=600)
+        except http.client.IncompleteRead:
+            code, headers, raw = -1, {}, b""
+        if code in (-1, 308, 500, 502, 503, 504):
+            # The last data PUT may have committed. A completed upload returns
+            # its original result. Only explicit incomplete status permits more bytes.
+            try:
+                code, headers, raw = go.call("PUT", loc, data=b"", headers={
+                    **auth, "Content-Range": f"bytes */{size}", "Content-Length": "0",
+                })
+            except http.client.IncompleteRead:
+                break
+            if code not in (200, 201, 308):
+                break
+        if code in (200, 201):
+            video = go._json(raw)
+            vid = video.get("id") if isinstance(video, dict) else None
+            if not isinstance(vid, str) or not _VID.fullmatch(vid):
+                break
+            status = video.get("status")
+            if not isinstance(status, dict):
+                status = {}
             st.log("google_api", kind="youtube_upload", result="uploaded", bytes=size)
-            return {"ok": True, "id": v.get("id"), "privacy": (v.get("status") or {}).get("privacyStatus"),
-                    "upload": (v.get("status") or {}).get("uploadStatus"),
-                    "next": "agentj google youtube get " + str(v.get("id"))}
-        if s not in (-1, 308, 500, 502, 503, 504):
-            st.log("google_api", kind="youtube_upload", result="failed", http_status=s)
-            return {"ok": False, "why": "failed", "http_status": s}
-        s, rh, _raw = go.call("PUT", loc, data=b"", headers={"Authorization": "Bearer " + tok,
-                                                            "Content-Range": f"bytes */{size}", "Content-Length": "0"})
-        m = re.fullmatch(r"bytes=0-(\d+)", rh.get("range") or "")
-        done = int(m.group(1)) + 1 if s == 308 and m else 0 if s == 308 else done
-    return {"ok": False, "why": "failed", "detail": "upload interrupted three times; nothing was published"}
+            return {"ok": True, "id": vid, "privacy": status.get("privacyStatus"),
+                    "upload": status.get("uploadStatus"), "next": "agentj google youtube get " + vid}
+        if code != 308:
+            st.log("google_api", kind="youtube_upload", result="failed", http_status=code)
+            return {"ok": False, "why": "failed", "http_status": code}
+        byte_range = headers.get("range")
+        match = re.fullmatch(r"bytes=0-(\d{1,12})", byte_range or "")
+        offset = int(match.group(1)) + 1 if match else 0
+        if (byte_range and not match) or not done <= offset < size:
+            break
+        done = offset
+    st.log("google_api", kind="youtube_upload", result="outcome_unknown")
+    return {"ok": False, "why": "upload_outcome_unknown",
+            "detail": "Check the original upload in YouTube Studio before requesting another upload."}
 
 
 class _Reader:

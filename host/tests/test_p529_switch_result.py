@@ -1,5 +1,6 @@
 """P529: a scheduled switch is not a completed switch; history fallback stays local."""
 import _hermetic
+from _testtmp import TEST_TMP
 import contextlib
 import io
 import tempfile
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from agentj import switch_harness as sw, slash, handoff, host_diagnostics, feedback_father
+from agentj.state import State
 
 
 class Result(unittest.TestCase):
@@ -47,9 +49,14 @@ class Result(unittest.TestCase):
             self.assertEqual((seen[0]['job'], seen[0]['status'], seen[0]['reason']), (job, 'rolled_back', 'no_reply'))
 
     def test_result_exit_codes(self):
-        for status, code in [('ok', 0), ('probe_ok', 0), ('rolled_back', 3), ('failed', 3), ('waiting', 4), ('switching', 4)]:
-            with self.subTest(status=status), patch.object(sw, 'read_receipt', return_value={'status': status, 'at': 1}), contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(sw.cli(SimpleNamespace(result=True, json=True), None, 'en'), code)
+        exit_codes = {'ok': 0, 'probe_ok': 0, 'rolled_back': 3, 'failed': 3, 'waiting': 4, 'switching': 4}
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as root:
+            state = State(Path(root))
+            for status, code in exit_codes.items():
+                receipt = {'status': status, 'at': 1, 'job': 'p529-result'}
+                with (self.subTest(status=status), patch.object(sw, 'read_receipt', return_value=receipt),
+                      contextlib.redirect_stdout(io.StringIO())):
+                    self.assertEqual(sw.cli(SimpleNamespace(result=True, json=True), state, 'en'), code)
 
     def test_refusal_is_vertical_and_bilingual(self):
         for lang in ('zh', 'en'):

@@ -205,7 +205,8 @@ test('a passkey answer waits for the reconnected session instead of 「没发出
   const api = read('../public/js/api.js');
   assert.match(api, /if \(!fa\) await sendApp\(out, g\);/);                        // no passkey: as before, pinned to its session
   // P566 (#364): handed in through pkhandin — the first ready connection, and again after a reconnect that swallowed it
-  assert.match(api, /const sent = await handIn\('ask:' \+ p\.id, \{ send: \(g2\) => sendApp\(out, g2\), until: Date\.now\(\) \+ APPROVE_HANDIN_MS, ch,/);
+  assert.match(api, /const sent = await handIn\('ask:' \+ p\.id, \{ send: \(g2\) => sendApp\(out, g2\),\s+until: Math\.min\(Date\.now\(\) \+ APPROVE_HANDIN_MS, p\.deadline\), live, ch,/);
+  assert.match(api, /ready: \(\) => approvalHandInReady\(p\)/);
   const S = await import('../public/js/session.js');
   const t0 = Date.now();
   assert.equal(await S.whenReady(300), null);                                        // never connected → null after the wait

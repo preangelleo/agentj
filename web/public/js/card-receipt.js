@@ -50,6 +50,10 @@ function matchesAsk(message, card) {
 const key = (kind, id) => kind + ':' + id;
 
 function live(probe) {
+  if (probe.kind === 'special') {
+    return canSign() && gen() === probe.generation && probes.get(key(probe.kind, probe.id)) === probe &&
+      performance.now() < probe.expires && probe.current();
+  }
   const ask = probe.kind === 'ask';
   return canSign() && gen() === probe.generation && probes.get(key(probe.kind, probe.id)) === probe &&
     (ask ? S.asks : S.qs).get(probe.id) === probe.card && probe.card.state === 'open' &&
@@ -57,7 +61,7 @@ function live(probe) {
     Date.now() < probe.card.deadline && performance.now() < probe.expires;
 }
 
-function visible(element, rounded = false) {
+export function visible(element, rounded = false) {
   if (!element || element.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
   for (let current = element; current; current = current.parentElement) {
     const style = getComputedStyle(current);
@@ -84,6 +88,9 @@ function visible(element, rounded = false) {
 }
 
 function displayed(probe) {
+  if (probe.kind === 'special') {
+    return !document.hidden && document.visibilityState === 'visible' && document.hasFocus() && probe.onScreen();
+  }
   if (document.hidden || document.visibilityState !== 'visible' || !document.hasFocus() ||
       document.body.dataset.sheet !== '1' || (probe.kind === 'question' && document.body.dataset.view !== 'chat')) return false;
   const sheet = document.getElementById('sheet');
@@ -156,15 +163,30 @@ export function observe(message, card, newCard) {
       Object.keys(offer).length !== 2 || typeof offer.n !== 'string' || !ID.test(offer.n) ||
       !Number.isSafeInteger(message.ttl) || !Number.isInteger(offer.ttl) || offer.ttl <= 0 || offer.ttl > 60 ||
       offer.ttl > message.ttl || !(ask ? matchesAsk(message, card) : matchesQuestion(message, card))) return;
+  install(message, generation, { kind, card, newCard });
+}
+
+/** Observe specialized presenters without creating another approval action or card. */
+export function observeSpecial(message, current, onScreen) {
+  const offer = message.delivery, generation = gen();
+  if (!peer.cardSpecialReceipt1 || !generation || !canSign() || typeof message.id !== 'string' ||
+      !ID.test(message.id) || !record(offer) || Object.keys(offer).length !== 2 ||
+      typeof offer.n !== 'string' || !ID.test(offer.n) || !Number.isSafeInteger(message.ttl) ||
+      !Number.isInteger(offer.ttl) || offer.ttl <= 0 || offer.ttl > 60 || offer.ttl > message.ttl) return;
+  install(message, generation, { kind: 'special', current, onScreen, newCard: true });
+}
+
+function install(message, generation, { kind, card, current, onScreen, newCard }) {
+  const { id, delivery: offer } = message;
   for (const probe of probes.values()) if (!live(probe)) drop(probe.kind, probe.id);
   const probeKey = key(kind, id);
-  const current = probes.get(probeKey);
-  if (current) {
-    // At most one reoffer per phase on an exact same-generation duplicate. Its life cannot extend.
-    if (current.n === offer.n && message.ttl <= current.ttl && offer.ttl <= current.offerTTL &&
-        current.card === card && current.generation === generation) current.limit = 2;
+  const existing = probes.get(probeKey);
+  if (existing) {
+    // A matching reoffer opens a second attempt during the original receipt window.
+    if (existing.n === offer.n && message.ttl <= existing.ttl && offer.ttl <= existing.offerTTL &&
+        existing.card === card && existing.generation === generation) existing.limit = 2;
   } else if (newCard && probes.size < MAX_PENDING) {
-    probes.set(probeKey, { kind, id, n: offer.n, generation, card,
+    probes.set(probeKey, { kind, id, n: offer.n, generation, card, current, onScreen,
       ttl: message.ttl, offerTTL: offer.ttl, expires: performance.now() + offer.ttl * 1000, limit: 1, received: false,
       attempts: { received: 0, visible: 0 }, sending: false, paint: 0,
       expiryTimer: setTimeout(() => drop(kind, id), offer.ttl * 1000) });

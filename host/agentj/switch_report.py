@@ -9,6 +9,108 @@ from . import ctl_auth
 SCOPE = 'harness-switch-report.json'
 
 
+TASK_STATES = ("checkpoint", "harness", "login", "approval", "queued", "queued_unsent", "resumed", "failed")
+_TASK_TEXT = {
+    "checkpoint": ("还没确认能从哪一步接着做。请先看原任务最后一步的结果。",
+                   "It’s unclear where to pick up. Check the last result in the original task."),
+    "harness": ("等新助手准备好后，再核对原任务。",
+                "Waiting for the new assistant to be ready before checking the original task."),
+    "login": ("请先登录要切换到的助手，再继续。",
+              "Sign in to the assistant you’re switching to before continuing."),
+    "approval": ("请先在原来配对的遥控器上处理确认卡。",
+                 "Respond to the confirmation card on the original paired remote."),
+    "queued": ("正在确认任务有没有交到新助手手里，先别重发。",
+               "Checking whether the task reached the new assistant. Please don’t resend yet."),
+    "queued_unsent": ("任务还没发出，正在等新助手接收。",
+                      "The task is still waiting to be sent to the new assistant."),
+    "resumed": ("任务已自动接上。进展请看原任务消息。",
+                "The task resumed automatically. Follow the original task message for updates."),
+    "failed": ("没能确认自动续做。请先看原任务消息，确认停在哪一步。",
+               "I couldn’t confirm that the task resumed. Check the original task message to see where it stopped."),
+}
+
+
+def task_text(rec, lang):
+    lines = _TASK_TEXT.get(rec.get("task_resume"))
+    if lines is None:
+        return ""
+    english = lang == "en"
+    text = lines[1] if english else lines[0]
+    count = rec.get("manual_resumes", 0)
+    if count >= 1:
+        if english:
+            unit = "time" if count == 1 else "times"
+            text += f" You asked to continue manually {count} {unit}."
+        else:
+            text += f"已手动续做 {count} 次。"
+    return "\n" + text
+
+
+def task_meta(st, job):
+    scope = _read(st.root / SCOPE)
+    if not job or scope.get("job") != job:
+        return {}
+    state, manual = scope.get("task_resume"), scope.get("manual_resumes")
+    return ({"task_resume": state, "manual_resumes": manual}
+            if state in TASK_STATES and type(manual) is int and 0 <= manual <= 999 else {})
+
+
+def manual_request(text):
+    return isinstance(text, str) and text.strip().lower().rstrip("。.!！") in ("继续", "继续做", "continue", "resume")
+
+
+def _open_delivery_status(host, device, tasks, open_ids):
+    pages = {page["id"]: (host.hist.epoch, page["ts"]) for page in tasks}
+    held, uncertain = set(), set()
+    for (owner, _), receipt in host.receipts.items.items():
+        turn = receipt.get("n")
+        if owner != device or turn not in pages or receipt.get("reply_page") != pages[turn]:
+            continue
+        state = receipt.get("s")
+        if state == "deliv" and not receipt.get("notice_only"):
+            return "resumed"
+        if state == "held" and receipt.get("seal"):
+            held.add(turn)
+        else:
+            uncertain.add(turn)
+    # Claim changes held to recv before submission. Older queued metadata carried no proof.
+    return "queued_unsent" if open_ids <= held - uncertain else "queued"
+
+
+def _task_status(host, scope, rec, row):
+    status, count = rec.get("task_resume"), 0
+    if status not in TASK_STATES:
+        return {}
+
+    def phone(page):
+        source = page["src"]
+        return (source.get("k") == "phone" and source.get("dev") == scope["device"]
+                and source.get("source_kind") == "phone" and source.get("source_role") == "owner")
+
+    turns = host.hist.turns.values()
+    tasks = [page for page in turns if phone(page) and page["src"].get("switch_resume_job") == scope["job"]]
+    if tasks and rec.get("status") in ("ok", "rolled_back"):
+        open_ids = {page["id"] for page in tasks if page["end"] == "open"}
+        if open_ids:
+            status = _open_delivery_status(host, scope["device"], tasks, open_ids)
+        elif any(page["end"] == "done" and page["reply"].get("text") for page in tasks):
+            status = "resumed"
+        else:
+            status = "failed"
+
+    if row:
+        for page in turns:
+            if page["id"] <= row["id"] or not phone(page):
+                continue
+            source = page["src"]
+            quote = (source.get("quote") or {}).get("id")
+            if not manual_request(source.get("text")) or (quote not in (None, scope["message"], row["id"])):
+                break
+            if not source.get("switch_resume_job"):
+                count += 1
+    return {"task_resume": status, "manual_resumes": min(count, 999)}
+
+
 def _read(path):
     try:
         data = json.loads(path.read_bytes())
@@ -49,8 +151,6 @@ def deliver(host, expected=None):
             return {'ok':False,'error':'wrong_job'}
         if not scope.get('device'):
             return {'ok':False,'error':'unbound'}
-        if scope.get('published'):
-            return {'ok':True,'duplicate':True}
         rec = switch.read_receipt(st)
         if not rec or rec.get('job') != job or rec.get('status') not in ('ok','rolled_back','failed'):
             return {'ok':False,'error':'no_result'}
@@ -69,19 +169,24 @@ def deliver(host, expected=None):
         elif not (scope.get('channel') == 'host' and old.get('k') == 'host' and set(st.devices()) == {device}):
             return {'ok':False,'error':'context_changed'}
         row = next((row for row in host.hist.turns.values() if row['src'].get('switch_job') == job),None)
+        task = _task_status(host, scope, rec, row)
+        if scope.get('published') and all(scope.get(key) == value for key, value in task.items()):
+            return {'ok':True,'duplicate':True}
+        meta = switch._result_meta({**rec, **task})
+        if not meta.get('target') or not meta.get('at'):
+            return {'ok':False,'error':'bad_receipt'}
         if row:
-            # A prior disk append or publication-marker write may have failed. Re-commit
-            # this exact turn ID before consuming the job; the phone still sees one page.
-            host.hist.update(row['id'], end='done')
+            # Both the initial publication and later task receipts use this exact history page.
+            if task:
+                host.hist_update(row['id'], text=switch._say_receipt(meta, host.lang), end='done')
+            else:
+                host.hist.update(row['id'], end='done')
         else:
-            meta = switch._result_meta(rec)
-            if not meta.get('target') or not meta.get('at'):
-                return {'ok':False,'error':'bad_receipt'}
             src = {'k':'agent','text':'','switch_job':job,'quote':{'id':message}}
             host.hist_add(src, switch._say_receipt(meta, host.lang), 'done')
         if not host.hist.last_write_ok:
             return {'ok':False,'error':'history_unavailable'}
-        scope['published'] = True
+        scope.update(task, published=True)
         st.write_private(st.root/SCOPE, json.dumps(scope).encode())
         return {'ok':True}
     except (OSError, KeyError, TypeError, ValueError):
@@ -98,7 +203,7 @@ def watch(host, job=None):
     scope = _read(host.st.root/SCOPE)
     expected = scope.get('job')
     if (not isinstance(expected,str) or not switch._JOB.fullmatch(expected) or not scope.get('device')
-            or scope.get('published') or (job and job != expected)
+            or (job and job != expected)
             or type(scope.get('at')) not in (int,float) or not 0 <= time.time()-scope['at'] < switch.JOB_MAX_AGE):
         return
     if host.__dict__.get('_switch_report_job') == expected:

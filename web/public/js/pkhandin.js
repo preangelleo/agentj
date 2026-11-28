@@ -11,7 +11,7 @@
 export const HANDIN_MS = 4 * 60 * 1000;
 const TICK_MS = 250;
 let H = null;
-const open = new Map();   // key → {send, ch, until, live, waiting, failed, g: generation it went out on, bad: one that refused it, shown}
+const open = new Map();   // key → {send, ch, until, live, ready, waiting, failed, g: generation it went out on, bad: one that refused it, shown}
 
 export function configure(h) { H = h; }
 /** A result is waiting for the host (true while that hand-in is open). */
@@ -23,9 +23,10 @@ export function handIn(reg, now = Date.now(), ch = null) {
 }
 /** P566: one answer that carries a Face ID result → sent on the first ready connection to the same computer before `until`,
  *  again after a reconnect that swallowed its answer, while live() (its card is still open). → true once it went out;
- *  false (failed() said so) when the window ended, the card went or another computer answers now. */
-export function put(key, { send, until, ch = null, live = () => true, waiting = null, failed = null }) {
-  const e = { send, until, ch: ch || H.channel() || null, live, waiting, failed, g: null, bad: null, shown: false };
+ *  false (failed() said so) when the window ended, the card went or another computer answers now.
+ *  ready() can also require confirmation that the same card was reoffered after reconnect. */
+export function put(key, { send, until, ch = null, live = () => true, ready = () => true, waiting = null, failed = null }) {
+  const e = { send, until, ch: ch || H.channel() || null, live, ready, waiting, failed, g: null, bad: null, shown: false };
   open.set(key, e);
   return run(key, e);
 }
@@ -33,13 +34,13 @@ async function run(key, e) {
   while (open.get(key) === e && Date.now() < e.until && e.live()) {
     const g = H.gen(), c = H.channel();
     if (g && g === e.g) return true;                  // on this connection already: its answer comes, or the next ready resends
-    if (!g || g === e.bad || !c) {
+    if (c && e.ch && c !== e.ch) break;               // another computer now: this answer was not made for it
+    if (!g || g === e.bad || !c || !e.ready()) {
       if (!e.shown) { e.shown = true; e.waiting?.(); }
       await new Promise((r) => setTimeout(r, TICK_MS));
       continue;
     }
     if (!e.ch) e.ch = c;                              // #363: started in the gap — the first computer it sees is the one
-    else if (c !== e.ch) break;                       // another computer now: this answer was not made for it
     try { e.g = g; await e.send(g); return true; } catch { e.g = null; e.bad = g; }
   }
   if (open.get(key) !== e) return false;

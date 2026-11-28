@@ -4,6 +4,7 @@ from _testtmp import TEST_TMP
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock
 from agentj import held, provenance
 from agentj.serve import Host
 from agentj.turn_heal import TurnHeal
@@ -88,11 +89,17 @@ class OwnerQueue(unittest.TestCase):
             with self.subTest(source=source), tempfile.TemporaryDirectory(dir=TEST_TMP) as root:
                 h,old=self.make(root,source)
                 h.queue_pending=lambda send: Host.queue_pending(h,send)
+                h.background_done_readback=Host.background_done_readback.__get__(h)
+                complete=Mock(return_value=1)
+                h.background_done=SimpleNamespace(complete=complete)
                 a=SimpleNamespace(host=h,cfg={},q=asyncio.Queue())
                 send=Send('fixture','A'*22,h.cur_turn,text='actual input')
                 send.source=source
-                if source==provenance.phone(): send.hook_notice=True
-                else: send.background_done_ids=['job'];h.background_done=SimpleNamespace(complete=lambda send:None)
+                is_hook=source==provenance.phone()
+                if is_hook:
+                    send.hook_notice=True
+                else:
+                    send.background_done_ids=['job']
                 Agent.submit(a,send)
                 self.assertIs(a.q.get_nowait(),send)
                 p=h.hist.get(send.turn)
@@ -104,6 +111,14 @@ class OwnerQueue(unittest.TestCase):
                 h.turn_heal.pages.add(send.turn)
                 h.turn_heal.state={'busy':True,'waited_s':20}
                 Host.say_delivered(h,send)
+                if is_hook:
+                    complete.assert_not_called()
+                else:
+                    complete.assert_called_once_with(send)
+                    self.assertIn(
+                        ('background_done_delivery', {'count': 1, 'outcome': 'delivered', 'id': send.turn}),
+                        h.logs,
+                    )
                 h.turn_heal._refresh_pages()
                 self.assertFalse(h.hist.get(send.turn)['card'].get('queued'))
                 h.hist_update(send.turn,text='actual reply',end='done')

@@ -6,7 +6,7 @@ import { useShort, phaseText } from './use.js';
 import { renderPage as renderForm, configure as configureForms, forgetAll as forgetForms } from './forms.js';
 import { refreshSpecialVisibility } from './approval-special541.js';
 import * as approval541 from './approval541.js';
-import { approvalById, acceptHistoryHead } from './snap.js';
+import { approvalById, acceptHistoryHead, cardExpired } from './snap.js';
 import { paint as paintApprovalSource572 } from './approval-source572.js';
 import {paint as terminalCommands, configure as configureRun, fixedLine} from './termcommands.js';
 import { paintReportActions } from './report-actions.js';
@@ -67,7 +67,7 @@ import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as re
 import { toWav, GAP_MIN_MS, GAP_SKIP_MS } from './wav.js';
 import * as LR from './longrec.js';   // P182: long takes kept on the phone until the computer has them
 import { Speaker, configureSpeech } from './speak.js';
-import { isReady, sendApp, hostId, peer, ask1 } from './session.js';
+import { isReady, sendApp, hostId, peer, ask1, gen } from './session.js';
 import { getSealed, putSealed, dbDel } from './store.js';
 import { Outbox, paint as paintOutbox, MAX as OUT_MAX, isEcho } from './outbox.js';
 import { onTheme } from './theme.js';   // P169 (§23)
@@ -324,7 +324,9 @@ let askBusy = false, askArmUntil = 0, askToasted = null, askResultTimer = null, 
 
 function askState(a){
   if (!a) return null;
-  return a.state === "open" && askSent.id === a.id ? askSent.state : a.state;
+  if (a.state !== "open") return a.state;
+  if (askSent.id === a.id) return askSent.state;
+  return cardExpired(a) ? "expired" : "open";
 }
 function askLabels(a){
   return (a.choices || []).map((pick, i) => typeof pick === "string" ? pick : pick.map(n => {
@@ -471,12 +473,15 @@ let leftTimer = 0;
 function paintLeft(item){
   clearTimeout(leftTimer);
   const p = el("askLeft");
-  if (!item || item.state !== "open" || !item.deadline || friendAsk(item)){ p.hidden = true; return; }   // friend cards say their own validity
+  if (!item || item.state !== "open" || !item.deadline || cardExpired(item) || friendAsk(item)){ p.hidden = true; return; }   // friend cards say their own validity
   const left = Math.max(0, Math.ceil((item.deadline - Date.now()) / 1000));
   p.hidden = false;
   p.textContent = item.goal === "auto" ? (left > 0 ? t('ask.goalLeft', {n: left}) : t('ask.goalUp')) : left > 0 ? t('ask.left', {n: left}) : t('ask.timeUp');
   if (item.tool === "wechat_confirm" && left > 0) p.textContent = t(left > 3600 ? "wc.leftHours" : "wc.leftMins", {n: Math.ceil(left / (left > 3600 ? 3600 : 60))});
-  if (left > 0) leftTimer = setTimeout(() => paintLeft(item), 1000);
+  leftTimer = setTimeout(() => {
+    if (cardExpired(item)) C.rerender();
+    else paintLeft(item);
+  }, Math.min(1000, Math.max(0, item.deadline - Date.now())));
 }
 
 function approvalOptions(){return {busy:apprBusy,questioned:()=>toNewest(),fold:()=>{foldedCard=cur?.card?cardKey(cur.card):null;if(cur)renderCard(cur);},open:()=>{foldedCard=null;voidFold=null;if(cur)renderCard(cur);},locate:async src=>{
@@ -541,6 +546,7 @@ function renderCard(s){
   el("frAsk").hidden = true;
   if(!pending)approval541.reset();
   syncApprovalAnchor();
+  if (pending && folded) paintLeft(card.kind === "question" ? a : p);
   if (result){
     el("askText").textContent = t('r.ask.answer');
     el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true; el("apprScope").hidden = true; el("cmdReason").hidden = true; el("cmdCopy").hidden = true;
@@ -574,7 +580,9 @@ let apprHold = null;
 
 function apprState(p){
   if (!p) return null;
-  return p.state === "open" && apprSent.id === p.id ? apprSent.state : p.state;
+  if (p.state !== "open") return p.state;
+  if (apprSent.card === p) return apprSent.state;
+  return cardExpired(p) ? "elapsed" : "open";
 }
 const FR_DONE = {approved: "allow", main: "main", denied: "deny", timeout: "timeout", expired: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
 function apprText(p){
@@ -582,7 +590,9 @@ function apprText(p){
   if (friendAsk(p) && p.pq && p.pq.pairing === true && FR_DONE[st] === "ended") return t('p417.so.closed');   // #186
   if (friendAsk(p) && FR_DONE[st]) return t('fr.ask.done.' + (p.tool === "friend_request" ? "fr_" : "pq_") + FR_DONE[st]);
   if (st === "open") return p.local_only ? t('r.appr.st.localOnly') : "";
+  if (st === "elapsed") return t('rtaj.approvalElapsed');
   if (p.done_why && APPR_FINAL.includes(st) && st !== "approved") return t(p.done_why);   // P539: the host said why it closed
+  if (approval541.enabled(p) && (st === "timeout" || st === "expired")) return t('rtaj.approvalExpired');
   return ["allow_sent", "deny_sent", "batch_sent", "approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"].includes(st) ? t('r.appr.st.' + st) : "";
 }
 function renderPermission(card, p){
@@ -694,7 +704,7 @@ function renderPermission(card, p){
     : p && open && sign && p.passkey_required && p.fa && !apprBusy ? {fa: p.fa_s, err: pkFail, retry: () => apprPost(p, "allow")} : {});
   el("elsewhereText").textContent = handoffAsk ? t("wc.confirmNote") : ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
-  approval541.paint(p,approvalOptions());
+  approval541.paint(p,{...approvalOptions(), actionable:open && sign});
   paintApprovalSource572(p || null);
   if(p&&waitsForNewRequest(p.id)){
     for(const id of ['apprAllow','apprBatch','apprGoalAdd'])el(id).disabled=true;
@@ -826,6 +836,7 @@ function toggleCmd(){
 // A UV card cannot offer Allow unless this remote can actually start a fresh assertion.
 const cardNoKey = (p) => !!(p && p.passkey_required && (!p.fa || !p.fa_ch || p.fa_s === "borrowed" || !canAssert()) && !isTV());
 async function apprPost(p, action){
+  if (apprState(p) !== "open") return;
   if(action!=="deny"&&waitsForNewRequest(p.id))return; // UI-only hold after an explicit refusal; never retry the old card.
   if(action!=="deny"&&cardNoKey(p))return;   // P561 追加 17: nothing to confirm with here — the card already says where
   if(action!=="deny"&&p.passkey_required&&phoneConfirmation(!p.fa))return;
@@ -839,10 +850,10 @@ async function apprPost(p, action){
     : await C.api.approve(p, action, action === "allow" && mailPicks.id === p.id ? [...mailPicks.set] : undefined);
   apprBusy = false;
   if (r.ok && approval541.enabled(p) && action!=="deny")toNewest();
-  if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" || action === "goaladd" ? "allow_sent" : "deny_sent"}; }
+  if (r.ok){ apprSent = {id: p.id, card: p, state: action === "batch" ? "batch_sent" : action === "allow" || action === "goaladd" ? "allow_sent" : "deny_sent"}; }
   else {
     // P539: a passkey tap that failed in the browser (r.err) says its own reason, in the block under the buttons
-    const why = r.err ? t(failKey(r.err, p.fa_s)) : r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail');
+    const why = r.err ? t(failKey(r.err, p.fa_s)) : r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : r.why === "request_ended" ? t('rtaj.approvalElapsed') : t('r.appr.fail');
     if (apprOpt && apprOpt.id === p.id){                        // it did not leave this phone: the card comes back, saying why
       if (foldedCard === apprOpt.key) foldedCard = null;
       apprOpt = null; apprDismissed = null; apprFail = {id: p.id, text: why};
@@ -852,6 +863,24 @@ async function apprPost(p, action){
   }
   if (cur) renderCard(cur);
 }
+async function renewApproval(p) {
+  if (p.renewStarted || !p.renewable || p.renewGeneration !== gen()) return;
+  p.renewStarted = true;
+  const result = await C.api.approvalReview(p, 'renew', innerWidth < 500 ? 'Face ID' : 'Touch ID');
+  toast(t(result.ok && result.state === 'restart_requested' ? 'p541.renewWaiting' : 'rtaj.renewUnavailable'), 5000);
+}
+
+export function approvalResult(p) {
+  if (!approval541.enabled(p)) return;
+  const sentHere = apprSent.id === p.id || apprOpt?.id === p.id;
+  if (p.renewable && p.envelope_verified && gen()) {
+    p.renewGeneration = gen();
+    toastAction(t('rtaj.approvalExpired'), t('rtaj.requestAgain'), () => renewApproval(p), 10000);
+  } else if (p.state === 'timeout' || p.state === 'expired' || (p.state === 'ended' && sentHere)){
+    executionToast(p.state === 'ended' && !p.done_why ? t('rtaj.approvalGone') : apprText(p), 5000);
+  }
+}
+
 // P396: refusal is a retryable failure, never a terminal decision and never proof of approval.
 export function answerRefused(m, say) {
   if (apprSent.id === m.id) apprSent = {id: null, state: null};
@@ -911,7 +940,7 @@ function tapToApprove(btn, action){
     if (!p || p.local_only || apprHold || e.button > 0) return;
     e.preventDefault();
     if (p.passkey_required && action === "allow") { apprPost(p, action); return; }
-    apprHold = {id: p.id, btn};
+    apprHold = {card: p, btn};
   });
   btn.addEventListener("pointerup", e => {
     const h = apprHold;
@@ -920,7 +949,7 @@ function tapToApprove(btn, action){
     const r = btn.getBoundingClientRect();
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;   // slid off: no answer
     const q = apprLive();
-    if (q && q.id === h.id && !q.local_only) apprPost(q, action);
+    if (q === h.card && !q.local_only) apprPost(q, action);
   });
   ["pointercancel", "pointerleave"].forEach(ev => btn.addEventListener(ev, () => { if (apprHold && apprHold.btn === btn) apprHold = null; }));
   btn.addEventListener("contextmenu", e => e.preventDefault());
@@ -930,7 +959,7 @@ async function askPost(a, cancel){
   const r = await C.api.answerQ(a, cancel ? null : askSel.picks.map(p => p.slice()));
   askBusy = false;
   if (r.ok){ askSent = {id: a.id, state: cancel ? "cancel_sent" : "sent"}; if (!cancel) a.choices = askSel.picks.map(p => p.slice()); }
-  else toast(r.why === "offline" ? t('r.q.net') : t('r.q.fail'), 3000);
+  else toast(t(r.why === "request_ended" ? "r.q.st.expired" : r.why === "offline" ? "r.q.net" : "r.q.fail"), 3000);
   if (cur) renderCard(cur);
 }
 

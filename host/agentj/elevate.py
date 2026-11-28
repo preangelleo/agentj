@@ -34,7 +34,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from . import diskq, passkey, provenance, wire
+from . import browser_authority, diskq, passkey, provenance, wire
 
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
@@ -69,6 +69,7 @@ PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_re
 PHONE_TYPES += ("help_done", "help_text", "help_cancel")
 PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
 PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")
+PHONE_TYPES += browser_authority.PHONE_TYPES
 RESULTS_NAME = "secret-results.json"
 RESULTS_KEEP = 100
 
@@ -1208,6 +1209,7 @@ class Elevator:
         self.out = Outbox(self)
         from .browser_login import LoginCards
         self.login = LoginCards(self)
+        self.creator = browser_authority.CreatorGrants(host)
         from .screenhelp import HelpCards
         self.help = HelpCards(self)
         from .contacts_serve import ContactService
@@ -1331,8 +1333,20 @@ class Elevator:
                 await self.host.send_app(s, obj_fn(s))
 
     async def _deliver_card(self, obj_fn, only=None, rid=None) -> dict:
-        from . import approval_delivery
-        result = await approval_delivery.deliver(self.host, obj_fn, rid=rid, only=only)
+        from . import approval_delivery, approval_special
+        card = self.cards.get(rid)
+        def frame(session):
+            message = obj_fn(session)
+            if not card or card["kind"] != "sudo" or message.get("t") != "elev":
+                return message
+            future = card["fut"]
+            return approval_delivery.observe_special(self.host, session, message, lambda: (
+                self.cards.get(rid) is card and future is card["fut"] and not future.done()
+                and not card.get("busy") and self._sees(card, session)
+                and card.get("nonce") == message.get("n") and card.get("review_state", "pending") == "pending"
+                and approval_special.source_allows(card, self.host)
+            ))
+        result = await approval_delivery.deliver(self.host, frame, rid=rid, only=only)
         if result["failed"]:
             self.st.log("elev_delivery", id=rid, result="transport_failed")
         if result["queued"]:
@@ -1438,6 +1452,7 @@ class Elevator:
             elif result == "stopped" and c.get('_chat_input') is not None:
                 c["cancel"].set()
         if result == "stopped":
+            self.creator.clear()
             self.grants.clear(result)
             self.out.end_all(result)
             self.login.end_all(result)
@@ -1819,6 +1834,9 @@ class Elevator:
     contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd", "ct_rm", "ct_export", "ct_import")
 
     async def on_phone(self, s, obj: dict) -> None:
+        if obj.get("t") in browser_authority.PHONE_TYPES:
+            self.host._bg(self.creator.on_phone(s, obj), "browser_creator_grant")
+            return
         if obj.get("t") == "elev_revoke":
             return await self.grants.on_phone(s, obj)
         if obj.get("t") in ("secret_out_open", "secret_out_decline"):
@@ -3003,6 +3021,8 @@ class Elevator:
                 res = await hostside.handle(self.host, req, peer=core_peer)
             elif isinstance(req, dict) and req.get("t") == "secret_out":
                 res = await self.out.send(req)
+            elif isinstance(req, dict) and req.get("t") == "browser_creator":
+                res = await self.creator.from_agent(req, peer if uid == os.getuid() else None)
             elif isinstance(req, dict) and req.get("t") == "browser_login":
                 res = await self.login.request_from_agent(req, peer if uid == os.getuid() else None)
             elif isinstance(req, dict) and req.get("t") == "browser_login_result":

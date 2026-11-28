@@ -4,6 +4,7 @@
 // one tap. Something → this card; 「现在升级」 is this phone's own signed /update, 「取消」 closes it on every remote.
 import { ask1, isReady, peer, sendApp } from './session.js';
 import { t } from './t.js';
+import { observeSpecial, visible } from './card-receipt.js';
 import { signedWrite } from './controls.js';
 import { el, toast, executionToast, confirmSheet, confirmOpen, closeConfirm } from './ui.js';
 
@@ -45,6 +46,11 @@ export async function add(m) {
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 600 ? m.ttl : 600;
   card = { id: m.id, items: Array.isArray(m.items) ? m.items : [], to: typeof m.to === 'string' ? m.to.slice(0, 32) : '',
     deadline: Date.now() + ttl * 1000 };
+  if (m.t === 'upg_card' && m.delivery) {
+    observeSpecial(m, () => card?.id === m.id && card.deadline > Date.now(),
+      () => showing === m.id && el('confirm').dataset.kind === 'upg' && visible(el('confirm-title')) &&
+        visible(el('confirm-text')) && visible(el('confirm-no'), true) && visible(el('confirm-yes'), true));
+  }
   if (showing === m.id) return;
   for (let i = 0; confirmOpen() && i < 600; i++) {            // another question is on screen: this card waits its turn
     await new Promise((r) => setTimeout(r, 1000));

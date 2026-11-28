@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import _hermetic
-from agentj import approval_delivery, approval_material, approval_review, provenance, serve, wire
+from agentj import approval_delivery, approval_material, approval_review, diskq, provenance, serve, wire
 from agentj.noise import IK, Handshake, Keypair
 from test_f17 import answer
 import test_0335_secret_validation as validation
@@ -20,7 +20,6 @@ class ChatSecretReceipt(unittest.IsolatedAsyncioTestCase):
     wait_for = validation.SecretValidation.wait_for
     _turn = validation.SecretValidation._turn
     req = validation.SecretValidation.req
-    asyncTearDown = validation.SecretValidation.asyncTearDown
 
     async def asyncSetUp(self):
         await validation.SecretValidation.asyncSetUp(self)
@@ -28,6 +27,11 @@ class ChatSecretReceipt(unittest.IsolatedAsyncioTestCase):
         self.st.set_agent_session(self.host.agent.kind, 'qa-native-session')
         self.followups = []
         self.host.agent.submit = self.followups.append
+
+    async def asyncTearDown(self):
+        await validation.SecretValidation.asyncTearDown(self)
+        # Test cleanup runs before the event loop's own disk queue shutdown.
+        self.assertTrue(await diskq.aflush())
 
     async def open_card(self, **kw):
         self.proof = patch.object(approval_material, 'verified_phone_chat', return_value=(self.host.agent, self.origin))

@@ -715,6 +715,9 @@ class OpenCodeAgent(Agent):
             return False
         self.proc = self.client = self.sid = None
         self.connected.clear()
+        for f in (*getattr(self, 'pending', {}).values(), *getattr(self, 'questions', {}).values()):
+            if not f.done():
+                f.set_result(True)
         return True
 
     async def _ensure_started(self) -> bool:
@@ -1583,7 +1586,7 @@ class OpenCodeAgent(Agent):
             body, path = {}, f"/question/{qid}/reject"
         finally:
             self.questions.pop(qid, None)
-        if gone.done() or not client:
+        if gone.done() or not client or self.client is not client:
             return
         if path.endswith("/reply"):
             self.q_sent[qid] = body["answers"]          # before the POST: its question.replied must match exactly this
@@ -1597,8 +1600,9 @@ class OpenCodeAgent(Agent):
 
     def _turn_end(self) -> None:
         if self.turn_done and not self.turn_done.is_set():
-            for f in list(self.pending.values()):    # a request OpenCode dropped (abort) must not keep its card open
-                if not f.done():
+            sessions = getattr(self, 'perm_sid', {})
+            for rid, f in list(self.pending.items()):  # a parent turn does not settle its sub-agent's request
+                if sessions.get(rid, self.sid) == self.sid and not f.done():
                     f.set_result(True)
             self.turn_done.set()
 
@@ -1738,7 +1742,9 @@ class OpenCodeAgent(Agent):
 
     async def _decide(self, rid: str, req: dict, gone: asyncio.Future) -> None:
         reply, msg = "reject", "已拒绝。"
-        sid = getattr(self, "perm_sid", {}).pop(rid, None)
+        sessions = getattr(self, "perm_sid", {})
+        sid = sessions.get(rid)
+        client = self.client
         try:
             tool, inp = to_tool(req, self.root)
             secret_raw = dict(inp)
@@ -1774,7 +1780,8 @@ class OpenCodeAgent(Agent):
             reply = "reject"
         finally:
             self.pending.pop(rid, None)
-        if gone.done() or not self.client:
+            sessions.pop(rid, None)
+        if gone.done() or not client or self.client is not client:
             return                                        # replied elsewhere (a reject of the same session) or gone
         self.ours.add(rid)
         with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):

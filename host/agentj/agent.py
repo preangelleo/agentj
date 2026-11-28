@@ -599,6 +599,8 @@ class Agent:
             if s.state == "cancelled" or (callable(guard) and not guard()):
                 s.state = "cancelled"
                 raise Withdrawn()
+            if getattr(s, "recovery_checkpoint", False) and s.state != "pending":
+                raise Withdrawn()                  # this restored intent has exactly one native attempt
             if s.state == "delivered":          # a retry of the same message after the process died
                 return await fn()
             s.state = "delivering"

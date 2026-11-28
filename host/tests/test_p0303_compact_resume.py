@@ -231,6 +231,7 @@ class OwnedClaudeResume(_Prep):
             self.assertTrue(comp["text"].startswith("已压缩"), comp["text"])
             [ho] = self.handovers()
             note = compactprep.NOTE["zh"].format(path=ho)
+            self.assertIn("任务动作和审批留在原入口", note)
             await c["wait"](lambda: self.notes() == [note])         # no new message from anyone
             self.assertLess(time.monotonic() - t0, 60.0)
             await c["idle"]()

@@ -160,7 +160,15 @@ class FakeHandler(http.server.BaseHTTPRequestHandler):
             return self._send(401, {})
         data = self._body()
         s.calls.append(("PUT", u.path, len(data)))
-        s.uploads["bytes"] = data
+        mode = s.mode.get("upload_reply")
+        if self.headers.get("Content-Range", "").startswith("bytes */"):
+            if mode == "status_unavailable":
+                return self._send(503, {})
+        else:
+            s.uploads["bytes"] = data
+            if mode in ("status_confirms", "status_unavailable"):
+                self.close_connection = True
+                return
         meta = s.uploads["meta"]
         return self._send(200, {"id": "VID436abc", "snippet": {"title": meta["snippet"]["title"]},
                                 "status": {"privacyStatus": meta["status"]["privacyStatus"], "uploadStatus": "uploaded"}})
@@ -429,6 +437,55 @@ class Use(Adapter):
         from agentj import google_api
         return asyncio.run(google_api.serve(host, self.st, {"t": "google_api", **req}))
 
+    async def paired_upload(self, decision, *, read_back=False, **req):
+        from agentj import application_ingress, google_api, provenance
+        from _p541_device import Phone, _owner_host, finish_phone_touch
+        from test_l1 import _ready
+
+        host = _owner_host(self.st, [])
+        host.agent_cfg = {"kind": "claude", "dir": str(self.work)}
+        phone = Phone(self.st)
+        session = _ready(host, phone)
+        request = {"t": "google_api", "op": "youtube_upload", **req}
+
+        async def send():
+            with provenance.paired_request(lambda: host._paired_live(session)):
+                with application_ingress.paired(host, session, request):
+                    return await google_api.serve(host, self.st, request)
+
+        async def card():
+            while not host.asks and not task.done():
+                await asyncio.sleep(.01)
+            self.assertFalse(task.done(), "upload must wait for a paired device decision")
+            ask, = host.asks.values()
+            return ask
+
+        with mock.patch.object(host, "ask", wraps=host.ask) as asked:
+            task = asyncio.create_task(send())
+            before = list(self.srv.calls)
+            try:
+                ask = await asyncio.wait_for(card(), 5)
+                shown = host._ask_msg(ask, session)
+                self.assertEqual(self.srv.calls, before, "no provider request before the decision")
+                if decision == "unsigned":
+                    answer = phone.answer(shown, True)
+                    del answer["sig"]
+                    await host._answer(session, answer)
+                    self.assertFalse(ask.fut.done(), "an unsigned allow cannot finish the prompt")
+                    self.assertEqual(self.srv.calls, before)
+                await host._answer(session, phone.answer(shown, decision == "allow"))
+                result = await asyncio.wait_for(task, 5)
+                readback = None
+                if read_back and result["ok"]:
+                    readback = await google_api.serve(
+                        host, self.st, {"t": "google_api", "op": "youtube_get", "id": result["id"]})
+                return result, asked.call_args_list, readback
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                await finish_phone_touch(host)
+
     def video(self, name="clip.mp4", n=300_000):
         p = self.work / name
         p.write_bytes(b"\x00\x00\x00\x18ftypmp42" + os.urandom(n))
@@ -437,36 +494,39 @@ class Use(Adapter):
     def test_youtube_upload_needs_the_owner_then_resumable_and_read_back(self):
         self.full("youtube-publish")
         v = self.video()
-        no = FakeHost(self.st, self.work, {"behavior": "deny", "reason": "device"})
-        r = self.api(no, op="youtube_upload", file=str(v), title="P436 clip", description="d")
+        unframed = FakeHost(self.st, self.work, ALLOW)
+        r = self.api(unframed, op="youtube_upload", file=str(v), title="P436 clip")
+        self.assertEqual((r["ok"], r["why"]), (False, "application_ingress_unverified"))
+        self.assertEqual(unframed.asked, [])
+        r, calls, _ = asyncio.run(self.paired_upload("deny", file=str(v), title="P436 clip", description="d"))
         self.assertEqual((r["ok"], r["why"]), (False, "denied"))
         self.assertNotIn("meta", self.srv.uploads, "nothing reaches YouTube without the owner's allow")
-        tool, inp, kw = no.asked[0]
+        call, = calls
+        tool, inp = call.args
+        kw = call.kwargs
         self.assertEqual(tool, "agentj google youtube upload")
         self.assertEqual((kw["always_ask"], kw["grant_info"], kw["batch"]), (True, True, False))
         self.assertIn("private", inp["summary"])
         self.assertIn("clip.mp4", inp["summary"])
-        unsigned = FakeHost(self.st, self.work, {"behavior": "allow"})
-        self.assertFalse(self.api(unsigned, op="youtube_upload", file=str(v), title="P436 clip")["ok"],
-                         "an allow without a paired device's signature does not count")
-        yes = FakeHost(self.st, self.work, ALLOW)
-        r = self.api(yes, op="youtube_upload", file=str(v), title="P436 clip")
+        unsigned, _, _ = asyncio.run(self.paired_upload("unsigned", file=str(v), title="P436 clip"))
+        self.assertFalse(unsigned["ok"], "an allow without a paired device's signature does not count")
+        self.assertNotIn("meta", self.srv.uploads)
+        r, calls, g = asyncio.run(self.paired_upload("allow", read_back=True, file=str(v), title="P436 clip"))
         self.assertEqual((r["ok"], r["id"], r["privacy"]), (True, "VID436abc", "private"), r)
         self.assertEqual(self.srv.uploads["meta"]["status"]["privacyStatus"], "private", "default privacy = private")
         self.assertEqual(self.srv.uploads["bytes"], v.read_bytes())
         self.assertEqual(self.srv.uploads["len"], v.stat().st_size)
-        g = self.api(yes, op="youtube_get", id="VID436abc")
         self.assertEqual((g["ok"], g["video"]["privacy"], g["video"]["processing"]), (True, "private", "succeeded"))
         self.assertIn(("GET", "/youtube/v3/videos", "id=VID436abc&part=snippet%2Cstatus%2CprocessingDetails"), self.srv.calls)
-        self.assertEqual(len(yes.asked), 1, "the read-back needs no card")
+        self.assertEqual(len(calls), 1, "the read-back needs no card")
         self.clean_everywhere(r, g)
 
     def test_public_upload_says_so_on_the_card(self):
         self.full("youtube-publish")
-        h = FakeHost(self.st, self.work, ALLOW)
-        r = self.api(h, op="youtube_upload", file=str(self.video()), title="t", privacy="public")
-        self.assertTrue(r["ok"])
-        self.assertIn("public", h.asked[0][1]["summary"])
+        r, calls, _ = asyncio.run(self.paired_upload("allow", file=str(self.video()), title="t", privacy="public"))
+        self.assertTrue(r["ok"], r)
+        call, = calls
+        self.assertIn("public", call.args[1]["summary"])
         self.assertEqual(self.srv.uploads["meta"]["status"]["privacyStatus"], "public")
 
     def test_upload_file_checks(self):

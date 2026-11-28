@@ -4218,5 +4218,10 @@
   "p0371.oldfix.cut": "终端已断开。如果升级正好到了最后一步，这是正常的：重新打开后看 agentj --version。",
   "p0371.oldfix.run": "执行并升级",
   "elev.secret.multiNote": "这些密钥会加密后直接保存到你的 Agent J 主机，Agent 看不到密钥内容。",
-  "elev.secret.multiTooLarge": "这些密钥加起来太长，请让 Agent 分开请求。"
+  "elev.secret.multiTooLarge": "这些密钥加起来太长，请让 Agent 分开请求。",
+  "rtaj.approvalElapsed": "这张审批卡已失效，请让 Agent 发一张新卡。",
+  "rtaj.approvalExpired": "这张审批卡已过期，请让 Agent 发一张新卡。",
+  "rtaj.requestAgain": "请 Agent 发新卡",
+  "rtaj.renewUnavailable": "未能发起新审批，请在聊天里让 Agent 再试一次。",
+  "rtaj.approvalGone": "原请求已结束，这次确认未生效。请让 Agent 发一张新卡。"
 }

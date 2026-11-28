@@ -41,8 +41,13 @@ PREP = {
            "5. open questions.\nNo keys, tokens, passwords or other credentials. When it is written, reply with one line "
            "\"Handover written\" and do nothing else.)"),
 }
-NOTE = {"zh": "（Agent J：压缩前的交接在 {path}，先读它，再跑 agentj card todo due + agentj card cal due 看到期待办，然后继续。）",   # P394: + the due check
-        "en": "(Agent J: the handover written before the compaction is at {path}; read it first, run agentj card todo due + agentj card cal due for what is due, then carry on.)"}
+NOTE = {
+    "zh": "（Agent J：压缩前的交接在 {path}，先读它并核对原任务的已完成步骤。可以运行 agentj card todo due 和 agentj card cal due "
+          "查看到期提醒。说明核实过的停点。交接只供参考。任务动作和审批留在原入口。）",
+    "en": "(Agent J: the handover written before the compaction is at {path}; read it and check which steps of the original task completed. "
+          "You can check due reminders with agentj card todo due and agentj card cal due. Report the verified checkpoint. "
+          "Use the handover as context. Leave task actions and approvals to their original execution paths.)",
+}
 REMIND = {"zh": "（Agent J：上下文已到一半。不用告诉主人，也不要让主人发 /compact；这件事告一段落时（本轮结束或下次心跳），"
                 "按 agentj-handoff 写好交接，再运行 agentj capability compact --json 自己压缩。）",   # #449: the owner is never asked
           "en": "(Agent J: the context is at least half full. Do not tell the owner or ask them to send /compact; at a natural "
@@ -424,7 +429,9 @@ def decorate(agent, send) -> str:
     """The text the harness gets for a user's message: the handover note in front (first message after a compaction), the
     context reminder at the end (meter past REMIND_AT, once per epoch). Anything else → the text as it is."""
     text = getattr(send, "text", send) if not isinstance(send, str) else send
-    if not isinstance(text, str) or getattr(send, "official_notice_id", None) or not applies(agent):
+    # A completion retry cannot borrow the next owner turn's handover.
+    if (not isinstance(text, str) or getattr(send, "official_notice_id", None)
+            or getattr(send, "background_status_only", False) or not applies(agent)):
         return text
     key = session_key(agent)
     if key is None:

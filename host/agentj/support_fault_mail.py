@@ -236,6 +236,25 @@ class MailConsent:
                                              'device': device, 'generation': scope.generation}})
             return self._offer(scope, binding, issued)
 
+    def _current_offer(self, device, state):
+        scope = self._scope(device)
+        pending = state.get('pending', {})
+        if pending.get('device') != device or pending.get('generation') != scope.generation:
+            raise MailConsentError('no_current_offer')
+        offer = self._offer(scope, pending['binding'], pending['issued_at'])
+        if not offer['issued_at'] <= int(time.time()) < offer['expires_at']:
+            raise MailConsentError('no_current_offer')
+        return scope, offer
+
+    def current_offer(self, device):
+        with self.st.file_lock('support-fault-mail'):
+            return self._current_offer(device, self._read())[1]
+
+    def verify_current_proof(self, device, proof):
+        with self.st.file_lock('support-fault-mail'):
+            _, offer = self._current_offer(device, self._read())
+            self._proof(proof, offer, int(time.time()))
+
     def _proof(self, proof: dict, offer: dict, now: int) -> None:
         body = _open(proof, self._desk_key, PROOF_CONTEXT)
         issued, expires = body.get('issued_at'), body.get('expires_at')
@@ -252,15 +271,8 @@ class MailConsent:
         """Consume the current purpose-specific proof and signed paired decision together."""
         with self.st.file_lock('support-fault-mail'):
             state = self._read()
-            scope = self._scope(device)
-            pending = state.get('pending', {})
-            if pending.get('device') != device or pending.get('generation') != scope.generation:
-                raise MailConsentError('no_current_offer')
-            offer = self._offer(scope, pending['binding'], pending['issued_at'])
-            now = int(time.time())
-            if not offer['issued_at'] <= now < offer['expires_at']:
-                raise MailConsentError('no_current_offer')
-            self._proof(proof, offer, now)
+            scope, offer = self._current_offer(device, state)
+            self._proof(proof, offer, int(time.time()))
             try:
                 Ed25519PublicKey.from_public_bytes(scope.signing_key).verify(_b64(owner_signature, 64), owner_approval_bytes(offer))
                 fields = passkey.approval_fields(assertion)
@@ -385,9 +397,11 @@ class MailConsent:
                 raise MailConsentError('bad_mailbox_code')
             return self._request(VERIFY_CONTEXT, scope.channel, pending['binding'], **fields)
 
-    def activation_request(self):
+    def activation_request(self, *, device=None):
         with self.st.file_lock('support-fault-mail'):
             scope, binding = self._bound()
+            if device is not None and scope.device != device:
+                raise MailConsentError('no_current_consent')
             return self._request(ACTIVATE_CONTEXT, scope.channel, binding)
 
     def confirm_activation(self, signed):
@@ -447,6 +461,7 @@ class MailConsent:
             msg = EmailMessage(policy=SMTP)
             msg['From'], msg['To'], msg['Subject'] = draft.sender, draft.recipient, MAIL_MARKER
             msg['Auto-Submitted'] = 'auto-generated'
+            msg['X-AgentJ-Fault-Digest'] = _sha(body.encode('ascii'))
             msg.set_content(body, cte='quoted-printable')
             client = (smtp_open or mail.smtp_open)(cfg, password)
             try:

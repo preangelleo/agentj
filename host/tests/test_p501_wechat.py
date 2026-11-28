@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from agentj import approvals, controls, provenance, wire
+from agentj import approvals, controls, diskq, provenance, wire
 from agentj import wechat_protocol as p
 from agentj.wechat import WeChat, Sessions, SYSTEM, HANDOFF
 from agentj.wechat_store import Store
@@ -140,6 +140,7 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         await self.c.stop()
         for t in self.jobs:t.cancel()
         await asyncio.gather(*self.jobs,return_exceptions=True)
+        self.assertTrue(await diskq.aflush())
         self.tmp.cleanup()
     def msg(self,**extra):
         return dict({'message_type':1,'from_user_id':'owner','message_id':1,'context_token':'fixture-context',

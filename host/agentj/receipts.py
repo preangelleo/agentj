@@ -102,6 +102,8 @@ class Receipts:
                    "n": n if type(n) is int else None}
             if rec["s"] == "held" and isinstance(r.get("seal"), str):
                 rec["seal"] = r["seal"]
+                if "checkpoint" in r:
+                    rec["checkpoint"] = r["checkpoint"]
             if rec["s"] in PAGE_STATES and rec["n"] is not None:
                 rec["notice_only"] = rec["s"] == "deliv" and "notice_page" in r
                 rec["reply_page"] = _reply_page(r.get("notice_page" if rec["notice_only"] else "page"))
@@ -110,6 +112,10 @@ class Receipts:
             elif RANK[rec["s"]] >= RANK[old["s"]]:
                 if "seal" in rec:
                     old["seal"] = rec["seal"]
+                    if "checkpoint" in rec:
+                        old["checkpoint"] = rec["checkpoint"]
+                    else:
+                        old.pop("checkpoint", None)
                 # A snapshot may precede an older unbound line. Keep matching stronger evidence.
                 if (rec["s"] != old["s"] or rec["n"] not in (None, old["n"])
                         or (rec.get("reply_page") is not None
@@ -155,6 +161,7 @@ class Receipts:
         page_key = "notice_page" if r["s"] == "deliv" and r.get("notice_only") else "page"
         return json.dumps({"d": k[0], "i": k[1], "s": r["s"], "t": int(r["t"]), "n": r["n"],
                            **({"seal": r["seal"]} if r["s"] == "held" and "seal" in r else {}),
+                           **({"checkpoint": r["checkpoint"]} if r["s"] == "held" and "checkpoint" in r else {}),
                            **({page_key: r["reply_page"]} if r["s"] in PAGE_STATES and r.get("reply_page") else {})},
                           separators=(",", ":"))
 
@@ -203,7 +210,7 @@ class Receipts:
         return r["s"] if r else None
 
     def mark(self, device: str, sid: str, state: str, turn: int | None = None, *, seal: str | None = None,
-             reply_page: tuple[int, int] | None = None, notice_only: bool = False) -> concurrent.futures.Future | None:
+             reply_page: tuple[int, int] | None = None, notice_only: bool = False, checkpoint: dict | None = None) -> concurrent.futures.Future | None:
         """Record now (memory, so a second `say` with this sid is `dup` at once) and queue the line for the disk. Returns
         the write's future (None when nothing changed). A state never goes back."""
         if state not in RANK or not _ok_key(device) or not _ok_key(sid):
@@ -220,6 +227,8 @@ class Receipts:
                "n": r["n"] if r and turn is None else turn}
         if state == "held":
             new["seal"] = seal
+            if checkpoint is not None:
+                new["checkpoint"] = checkpoint
         if reply_page is not None:
             new["reply_page"] = reply_page
             new["notice_only"] = notice_only

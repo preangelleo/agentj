@@ -1,0 +1,38 @@
+diff --git a/js/settings.js b/js/settings.js
+index 0582777efe..a4878762bd 100644
+--- a/js/settings.js
++++ b/js/settings.js
+@@ -361,11 +361,11 @@ export async function faceIdStep(res, txt = {}) {
+   let p = null;
+   const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
+   yes.addEventListener('click', grab);
+-  say('');
++  if (txt.showSaving !== false) say('');
+   const ok = await pkSheet(res.fa_s, txt.titleText ?? t(txt.title || 'p336.faTitle'), txt.textText ?? t(txt.text || 'p336.faText'), t(txt.yes || 'p336.faYes'));   // P539: + the line when the passkey is elsewhere · 0304 r2: ready-made texts (with a name)
+   yes.removeEventListener('click', grab);
+   if (!ok || !p) return null;
+-  say(t('set.saving'), true);
++  if (txt.showSaving !== false) say(t('set.saving'), true);
+   return p;
+ }
+ /** confirm → signed approval_set → ctl_res; ok = follow at once (the `preferences` broadcast confirms), else say why. */
+diff --git a/js/setup.js b/js/setup.js
+index 4b68810228..30fd7991dc 100644
+--- a/js/setup.js
++++ b/js/setup.js
+@@ -16,6 +16,7 @@ import { estop, signedWrite, whyText } from './controls.js';
+ import { t, lang, onLang } from './t.js';
+ import { mk, toast, pageCopy } from './ui.js';
+ import { keysSet, newSid, say } from './api.js';
++import * as browserGrants from './browser-grants.js';
+
+ const pick = (o) => (o && typeof o === 'object' ? String((lang() === 'en' ? o.en : o.zh) ?? '') : '');
+ // The checklist already owns the bilingual Ego Lite copy.
+@@ -311,6 +312,7 @@ function overview(box) {
+       ul.appendChild(li);
+     }
+     wrap.appendChild(ul);
++    if (g === 'browser' && S.creator_site_grants === true) wrap.appendChild(browserGrants.panel());
+   }
+   box.appendChild(wrap);
+ }

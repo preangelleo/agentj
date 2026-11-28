@@ -5718,7 +5718,12 @@ export default {
   "p0371.oldfix.why": "升级没有完成，多半是这个旧版本升级程序的一个已知问题；这台 Agent J 主机仍是 {v}，照常可用，配对和设置都不变。下面这一行会把 Agent J 自己的依赖缓存目录改成仅本人可写，然后立即升级并重启 Agent J，正在进行的任务会被打断。在这台 Agent J 主机的终端里运行它，通常就能升级；网页终端会在最后断开，重新打开后看 agentj --version。仍失败就不要重复，请按修复说明联系客服。",
   "p0371.oldfix.raw": "查看原始信息",
   "p0371.oldfix.cut": "终端已断开。如果升级正好到了最后一步，这是正常的：重新打开后看 agentj --version。",
-  "p0371.oldfix.run": "执行并升级"
+  "p0371.oldfix.run": "执行并升级",
+  "rtaj.approvalElapsed": "这张审批卡已失效，请让 Agent 发一张新卡。",
+  "rtaj.approvalExpired": "这张审批卡已过期，请让 Agent 发一张新卡。",
+  "rtaj.requestAgain": "请 Agent 发新卡",
+  "rtaj.renewUnavailable": "未能发起新审批，请在聊天里让 Agent 再试一次。",
+  "rtaj.approvalGone": "原请求已结束，这次确认未生效。请让 Agent 发一张新卡。"
  },
  "en": {
   "p0287.hideDone": "Hide completed",
@@ -11438,6 +11443,11 @@ export default {
   "p0371.oldfix.why": "The update did not finish, most likely a known fault in this older updater; this Agent J host still runs {v} as before, pairing and settings unchanged. The line below makes Agent J's own dependency cache writable only by you, then updates and restarts Agent J at once, interrupting any task in progress. Running it in the host's terminal usually updates it; a web terminal disconnects at the end (reopen it, check agentj --version). If it still fails, do not run it again: contact support via the repair guide.",
   "p0371.oldfix.raw": "Show the original message",
   "p0371.oldfix.cut": "The terminal disconnected. At the last step of an update this is expected: reopen it and check agentj --version.",
-  "p0371.oldfix.run": "Run and update"
+  "p0371.oldfix.run": "Run and update",
+  "rtaj.approvalElapsed": "This approval is no longer active. Ask the Agent for a new card.",
+  "rtaj.approvalExpired": "This approval expired. Ask the Agent for a new card.",
+  "rtaj.requestAgain": "Ask for a new card",
+  "rtaj.renewUnavailable": "Could not request a new card. Ask the Agent to try again in chat.",
+  "rtaj.approvalGone": "The original request ended before this approval could take effect. Ask the Agent for a new card."
  }
 };

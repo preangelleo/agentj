@@ -297,8 +297,7 @@ class HelloSend(Send):
 
 
 class HandoffSend(Send):
-    """P289: the host turn that has the harness being switched away from write switch.md (and, after the switch, the turn
-    that has the new one carry on from it). Same queue and provenance as HelloSend."""
+    """P289: the host turn that asks the outgoing harness to write switch.md. Same provenance as HelloSend."""
 
     def __init__(self, text: str):
         from .provenance import system
@@ -474,13 +473,10 @@ def handoff_prompt(kind: str, req: dict, cfg: dict, lang: str = "zh") -> str | N
     """Fixed host text for serve's `harness_handoff`: `write` → the running harness (`from`) writes switch.md before the."""
     from . import handoff
     step, frm, to = req.get("step"), req.get("from"), req.get("to")
-    if step not in ("write", "resume") or frm not in KINDS or to not in KINDS or frm == to \
-            or kind != (frm if step == "write" else to) or not isinstance((cfg or {}).get("dir"), str):
+    if step != "write" or frm not in KINDS or to not in KINDS or frm == to \
+            or kind != frm or not isinstance((cfg or {}).get("dir"), str):
         return None
-    where = handoff.switch_where(cfg)
-    if step == "write":
-        return handoff.switch_prep_text(lang, where, LABEL[frm], LABEL[to])
-    return handoff.switch_resume_text(lang, where)
+    return handoff.switch_prep_text(lang, handoff.switch_where(cfg), LABEL[frm], LABEL[to])
 
 
 
@@ -488,10 +484,10 @@ def handoff_prompt(kind: str, req: dict, cfg: dict, lang: str = "zh") -> str | N
 
 PROGRESS_P289 = {
     "zh": {"handoff": "先请 {f} 写好交接（最多 3 分钟），再切换到 {t}…",
-           "handoff_ok": "{f} 的交接写好了，正在切换到 {t}；{t} 接上后会先读交接再接着干…",
+           "handoff_ok": "{f} 的交接写好了，正在切换到 {t}；接上后会核对可续的工作…",
            "handoff_failed": "这次没写成交接（{f} 没有写好交接文件），照样切换到 {t}；将提供最近对话的本地脱敏摘录，未必包含全部要点。"},
     "en": {"handoff": "Asking {f} to write the handoff first (up to 3 minutes), then switching to {t}…",
-           "handoff_ok": "{f} wrote the handoff; switching to {t}, which reads it first and then carries on…",
+           "handoff_ok": "{f} wrote the handoff. Switching to {t} and checking which work can resume…",
            "handoff_failed": "No handoff this time ({f} did not write the handoff file); switching to {t} anyway. "
                              "A local redacted excerpt of recent conversation will be provided; some key points may be missing."},
 }
@@ -603,10 +599,13 @@ def _result_meta(rec):
     enums = {"status": (*LIVE, "ok", "probe_ok", "failed", "rolled_back", "scan"),
              **dict.fromkeys(("target", "from", "current", "name"), KINDS),
              "reason": REASON["en"].keys() | switch_outcome.PLAIN.keys(), "back": REASON["en"].keys() | switch_outcome.PLAIN.keys(), "detail": DETAIL["en"], "err": ERR["en"],
-             "kept": ("busy", "card", "deferred"), "handoff": ("ok", "missing", "unchanged", "timeout", "refused"), "login": ("free",)}
+             "kept": ("busy", "card", "deferred"), "handoff": ("ok", "missing", "unchanged", "timeout", "refused"),
+             "task_resume": switch_report.TASK_STATES, "login": ("free",)}
     out = {}
     for k, v in rec.items():
         if k in enums and isinstance(v, str) and v in enums[k]:
+            out[k] = v
+        elif k == "manual_resumes" and type(v) is int and 0 <= v <= 999:
             out[k] = v
         elif k in ("at", "waited", "start_secs") and type(v) in (int, float) and 0 <= v < 1e12:
             out[k] = v
@@ -638,7 +637,7 @@ def host_result(st, req) -> dict:
         return {"ok": False, "error": "wrong_job"}
     if rec.get("status") in LIVE and time.time() - rec["at"] > JOB_MAX_AGE:
         return {"ok": False, "error": "stale_job"}
-    result = _result_meta(rec)
+    result = _result_meta({**rec, **(switch_report.task_meta(st, rec.get("job")) if req["kind"] == "switch" else {})})
     if req["kind"] == "scan":
         result["harnesses"] = [_result_meta(row) for row in rec.get("harnesses", []) if isinstance(row, dict)]
     return {"ok": True, "receipt": result}
@@ -648,7 +647,7 @@ def _client_receipt(st, name=RECEIPT, job=None):
     rec = read_receipt(st, name)
     from . import fence
     if rec and (not job or rec.get("job") == job) and not fence.inside():
-        return rec
+        return {**rec, **(switch_report.task_meta(st, rec.get("job")) if name == RECEIPT else {})}
     from .elevate import client_request
     from .names import elevate_sock
     try:
@@ -1229,6 +1228,12 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         rec = {"status": status, "target": target, "from": frm or (prev or {}).get("kind"), **extra}
         if reason:
             rec["reason"] = reason
+            if reason in ("auth", "not_logged_in", "provider_key", "owner_provider_key", "owner_password"):
+                rec.update(task_resume="login", manual_resumes=0)
+            elif status == "rolled_back":
+                rec.update(task_resume="checkpoint", manual_resumes=0)
+            elif "handoff" in extra:
+                rec.update(task_resume="failed", manual_resumes=0)
         if back_reason:
             rec["back"] = back_reason
         if undo:
@@ -1403,12 +1408,10 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         if reason is None and not _reads_back(st, target):
             reason = "config_mismatch"
     if reason is None:
-        done("ok")
-        if ho == "ok":                 # P289: introduced and verified — now carry on from the handoff (like P151's recovery)
-            r = ctl({"cmd": "harness_handoff", "step": "resume", "from": prev["kind"], "to": target})
-            st.log("harness_handoff", step="resume", result="sent" if r and r.get("ok") is True else "refused",
-                   frm=prev["kind"], to=target)
-        return 0
+        extra["task_resume"] = ("approval" if extra.get("kept") == "card" else "harness" if extra.get("kept") == "deferred"
+                                else "checkpoint")
+        extra["manual_resumes"] = 0
+        return done("ok")
 
     _progress(ctl, "back", target, prev["kind"])
     _restore(st, raw)
@@ -1556,7 +1559,8 @@ def _say_message(r: dict, lang: str) -> str:
 
 
 def _say_receipt(rec: dict | None, lang: str) -> str:
-    return _receipt_message(rec, lang) + switch_outcome.binaries(rec or {}, lang)
+    return (_receipt_message(rec, lang) + switch_outcome.binaries(rec or {}, lang)
+            + switch_report.task_text(rec or {}, lang))
 
 
 def _receipt_message(rec: dict | None, lang: str) -> str:

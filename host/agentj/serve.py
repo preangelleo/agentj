@@ -269,6 +269,7 @@ class Session:
     provenance: dict | None = None  # set by verified paired transport, never defaulted from absence
     card_receipt: bool = False
     ask_receipt: bool = False
+    special_receipt: bool = False
     question_probes: dict[str, tuple] = field(default_factory=dict)
 
 
@@ -283,6 +284,7 @@ class Question:
     task: str | None = None
     delivery_epoch: int | None = None
     reminder_live: Callable[[], bool] | None = None
+    request_gone: asyncio.Future | None = None
 
 
 def _cfg_patch(old: dict, new: dict) -> tuple[dict, dict]:
@@ -357,6 +359,7 @@ class Ask:
     settings_session: object | None = None  # #454 private, exact live requesting Noise session
     host_card: bool = False        # trusted host presentation marker; never inferred from tool name
     prow: str = ""                 # 0269-w3-policy: the card's class (approval_policy.ROWS) — shown with why the task does not cover it
+    request_gone: asyncio.Future | None = None
 
 
 @dataclass
@@ -946,6 +949,9 @@ class Host:
             if obj.get('t') == 'ask' and 'delivery' in obj:
                 from . import approval_delivery
                 return approval_delivery.ready_to_write(self, s, obj)
+            if obj.get('t') in ('elev', 'upg_card') and 'delivery' in obj:
+                from . import approval_delivery
+                return approval_delivery.special_write_live(self, s, obj)
             if obj.get('t')!='secret_out_val':return True
             from . import approval_special
             out=getattr(getattr(self,'elevate',None),'out',None)
@@ -1469,6 +1475,7 @@ class Host:
             s.pair1 = s.p33 and isinstance(caps, list) and pair_card.CAP in caps[:16]
             s.card_receipt = s.p33 and "card_receipt1" in caps[:16]
             s.ask_receipt = s.card_receipt and "card_ask_receipt1" in caps[:16]
+            s.special_receipt = s.card_receipt and "card_special_receipt1" in caps[:16]
             s.rc = _reconnect_reason(obj.get("rc"))
             h = obj.get("hist")
             if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
@@ -3001,7 +3008,7 @@ class Host:
                     await self._ctl_send(w, {"ok": True, "agent_status": self.eff_status()})
                 elif cmd == "harness_hello":        # P155: after a harness switch / roll-back — a fixed host turn, no free text
                     await self._ctl_send(w, self.harness_hello(req))
-                elif cmd == "harness_handoff":      # P289: switch.md before a harness switch / carry on from it after
+                elif cmd == "harness_handoff":      # P289: switch.md before a harness switch
                     await self._ctl_send(w, self.harness_handoff(req))
                 elif cmd == "harness_progress":     # P281: the switch / scan job's phase → a fixed line the owner sees
                     await self._ctl_send(w, self.harness_progress(req))
@@ -5512,6 +5519,10 @@ class Host:
         if self.cur_turn is not None:
             self.hist_update(self.cur_turn, end="stopped" if halted else ("failed" if self.cur_failed else "done"),
                              **({"use": use} if use else {}))
+            page = self.hist.get(self.cur_turn)
+            if page and page["src"].get("switch_resume_job"):
+                from . import switch_report
+                switch_report.watch(self, page["src"]["switch_resume_job"])
             self.media_later(self.cur_turn)
             _rcpt_turn(self, self.cur_turn)             # P313
         if self.telegram and self.cur_turn is not None:
@@ -5606,13 +5617,25 @@ class Host:
                                     "to": latest if isinstance(latest, str) and auto_update.newer_known(self.st) else ""}
         if old is not None:
             self._post(self._send_p33, lambda s, i=old["id"]: {"t": "upg_card_done", "id": i, "result": "replaced"})
-        self._post(self._send_p33, lambda s: self._upg_msg())
+        self._post(self._deliver_upgrade_prompt, self.upg)
         self._bg(self._upg_expire(rid), "upg_expire")
         phones = sum(1 for x in self.sessions.values() if x.state == "ready" and x.p33 and self.st.is_allowed(x.pub))
         self.st.log("upg_card", id=rid, n=len(items), phones=phones)
         self.activity("auto_update", result="card", text=f"升级前确认卡：{len(items)} 项会被打断 / Upgrade confirmation card: {len(items)} item(s) would be interrupted")
         self.push_notify("ask")
         return {"id": rid, "phones": phones, "items": items}
+
+    async def _deliver_upgrade_prompt(self, card):
+        from . import approval_delivery
+        for session in list(self.sessions.values()):
+            if self.upg is not card or not self._upg_live():
+                return
+            if session.state != "ready" or not session.p33 or not self.st.is_allowed(session.pub):
+                continue
+            obj = self._upg_msg()
+            def current(items=obj["items"]):
+                return self.upg is card and self._upg_live() and self._upg_msg()["items"] == items
+            await self.send_app(session, approval_delivery.observe_special(self, session, obj, current))
 
     def upg_end(self, result: str, by: str | None = None, *, job=None) -> None:
         u, self.upg = self.upg, None
@@ -6245,9 +6268,19 @@ class Host:
             a = _held_channel
         else:
             a = self.asks.get(rid) if isinstance(rid,str) else None
-        if a is None or a.fut.done():
-            return                         # unknown or already decided (another phone, timeout): nothing to do
         from . import list_approval
+        if a is None or a.fut.done():
+            # Repeat only a known unavailable outcome to the paired device. A missing id
+            # after restart (or another remote's successful decision) proves no outcome.
+            finished = self.__dict__.get('_approval_finished', {}).get(rid) if isinstance(rid, str) else None
+            if (_held_channel is None and finished is not None and self._paired_live(s)
+                    and finished.only in (None, s.device) and list_approval.state_live(self, finished)):
+                terminal = list_approval.unavailable_receipt(self, finished)
+                if terminal is not None:
+                    await self.send_app(s, terminal)
+            return
+        if getattr(a, 'list_model', False) and list_approval.waiter_unavailable(a):
+            return  # the request waiter owns and broadcasts its terminal result
         if not list_approval.state_live(self, a):
             list_approval.state_changed(self, a)
             return await self.send_app(s, {"t":"answer_refused", "id":a.rid, "why":"state_authority_changed"})
@@ -6373,8 +6406,9 @@ class Host:
             if not list_approval.state_live(self, a):
                 list_approval.state_changed(self, a)
                 return await self.send_app(s, {"t":"answer_refused", "id":a.rid, "why":"state_authority_changed"})
+            unavailable = getattr(a, 'list_model', False) and (a.fut.done() or list_approval.waiter_unavailable(a))
             if (a.fut.done() or time.monotonic() > a.deadline or self.stopped()
-                    or self.st.sign_key(s.device) != sk
+                    or unavailable or self.st.sign_key(s.device) != sk
                     or (not review_bound and not self._native_ask_live(a))
                     or (settings_bound and not settings_live())
                     or (review_bound and not settings_bound and (self.agent is not a.review_agent
@@ -6391,6 +6425,8 @@ class Host:
                         await asyncio.to_thread(ledger.release, a.operation_once_key, a.rid)
                     except (ValueError, OSError):
                         pass
+                if unavailable:
+                    return  # do not resend an actionable card while its terminal result is on the way
                 return await self._answer_refused(s, a, "authority_changed")
             a.answer_v, a.answer_digest = answer_v, display_digest
             if hasattr(a, "envelope") and not ok:
@@ -6403,6 +6439,8 @@ class Host:
                         await asyncio.to_thread(ledger.finish,a.operation_once_key,a.rid,'denied')
                     except (ValueError, OSError):
                         return await self._answer_refused(s, a, 'operation_ledger_unavailable')
+                    if a.fut.done() or (getattr(a, 'list_model', False) and list_approval.waiter_unavailable(a)):
+                        return
                 a.review_state = "denied"
                 approval_review.submit_event(self, a, "deny", secrets.token_hex(16), device=s.device)
             a.allow_add = list(picks or [])
@@ -7312,8 +7350,6 @@ class Host:
 
     def queue_dropped(self, item, why: str = "stopped") -> None:
 
-        if getattr(item, "background_done_ids", None):
-            self.background_done.complete(item)
         if getattr(item, "heartbeat_key", None) or getattr(item, "background_done_ids", None) \
                 or getattr(item, "quota_resume_id", None) or getattr(item, "auto_notify", None) or getattr(item, "hook_notice", None) \
                 or getattr(item, "compact_resume", None):
@@ -7642,7 +7678,7 @@ class Host:
 
         if s is not None and not s.p33:
             return {}
-        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1", "privatefiles1", "privatefiles2", "card_receipt1", "card_ask_receipt1"]
+        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1", "privatefiles1", "privatefiles2", "card_receipt1", "card_ask_receipt1", "card_special_receipt1"]
         if getattr(self, "telegram", None) is not None and self.telegram.can_forward():   # P118 B10: share → the owner's Telegram
             caps.append("tgfwd")
         if getattr(self, "telegram", None) is not None:   # P183: this host forwards a reply's file too (tg_fwd {mid}); the phone
@@ -8418,6 +8454,9 @@ class Host:
         if t == "q_answer":
             return self._q_answer(s, obj)
         if t == "card_receipt":
+            if obj.get('kind') == 'special' and s.special_receipt:
+                from . import approval_delivery
+                return approval_delivery.receive_special(self, s, obj)
             if obj.get('kind') == 'ask' and s.ask_receipt:
                 from . import approval_delivery
                 return approval_delivery.receive(self, s, obj)
@@ -8538,11 +8577,16 @@ class Host:
                 send.state = "cancelled"
                 return None
             send.delivery_allowed = held_guard
+            send.recovery_checkpoint = True
         elif sid is not None and agent_text is None:  # ordinary say, excluding terminal bang with an independent sid
             from . import upgrade_messages
             _rcpt(self, s.device, sid, "recv", send.turn,
                   reply_page=upgrade_messages.reply_page_coordinates(self, send))
         self.agent.submit(send)
+        from . import switch_report
+        if send.source == provenance.phone() and (switch_report.manual_request(turn["src"].get("text"))
+                or turn["src"].get("switch_resume_job")):
+            switch_report.watch(self)
         return send
 
     def _meeting_text(self, s: Session, text: str, has_audio: bool) -> str:
@@ -8872,8 +8916,8 @@ class Host:
             if rest != card:
                 self.hist_update(send.turn, card=rest)
         if getattr(send, "background_done_ids", None):
-            self.background_done.complete(send)
-            self.st.log("background_done_delivery", count=len(send.background_done_ids), outcome="delivered")
+            if not getattr(send, "await_background_readback", False):
+                self.background_done_readback(send)
             return
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="delivered")
@@ -8904,6 +8948,11 @@ class Host:
         self.st.log("say_delivered", device=send.device, id=send.turn)
         self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
 
+    def background_done_readback(self, send: compose.Send) -> None:
+        if self.background_done.complete(send):
+            self.st.log("background_done_delivery", count=len(send.background_done_ids),
+                        outcome="delivered", id=send.turn)
+
     def msg_steered(self, send: compose.Send, uncertain: bool = False) -> None:
         """0269-w2-steer (#471, PROTOCOL §10.2a): the owner's message went into the running Codex turn — its page is closed
         as absorbed (card.steered = the running turn's page) and every phone hears `msg_steered {mid, turn}`. `uncertain`
@@ -8924,8 +8973,8 @@ class Host:
             self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="uncertain")
             return
         if getattr(send, "background_done_ids", None):
-            self.background_done.complete(send)  # uncertain native writes are never replayed
-            self.st.log("background_done_delivery", count=len(send.background_done_ids), outcome="uncertain")
+            self.st.log("background_done_delivery", count=len(send.background_done_ids),
+                        outcome="uncertain", id=send.turn)
             return
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="uncertain")
@@ -9279,7 +9328,7 @@ class Host:
             approvals.record_question(self.st, **base, decision="no_device", reason="no_device")
             return "no_device", None
         q = Question(qid, qs, digest, time.monotonic() + Q_TTL, asyncio.get_running_loop().create_future(), task,
-                     self.hist.epoch if observe else None, reminder_live if observe else None)
+                     self.hist.epoch if observe else None, reminder_live if observe else None, request_gone=gone)
         self.questions[qid] = q
         self._interrupt("questions")
         self.st.log("question", id=qid, agent=kind)
@@ -9296,14 +9345,15 @@ class Host:
             waiters = {q.fut} | ({gone} if gone else set())
             done, _ = await asyncio.wait(waiters, timeout=max(0.0, q.deadline - time.monotonic()),
                                          return_when=asyncio.FIRST_COMPLETED)
-            if q.fut in done:
+            if gone is not None and gone.done():
+                decision, reason = "gone", "agent_gone"
+            elif q.fut in done:
                 decision, picks, did, sk, sig = q.fut.result()
                 reason = "device" if did else ("estop" if self.stopped() else "serve_stop")
             else:
-                decision, reason = ("gone", "agent_gone") if gone in done else \
-                    (("gone", "serve_stop") if self.stopping.is_set() else ("timeout", "timeout"))
-                if not q.fut.done():
-                    q.fut.set_result((decision, None, None, None, None))
+                decision, reason = ("gone", "serve_stop") if self.stopping.is_set() else ("timeout", "timeout")
+            if not q.fut.done():
+                q.fut.set_result((decision, None, None, None, None))
         finally:
             self.questions.pop(qid, None)
             if observe:
@@ -9324,7 +9374,8 @@ class Host:
     def _q_answer(self, s: Session, obj: dict) -> None:
         qid, sig = obj.get("id"), obj.get("sig")
         q = self.questions.get(qid) if isinstance(qid, str) else None
-        if q is None or q.fut.done():
+        gone = getattr(q, "request_gone", None)
+        if q is None or q.fut.done() or (gone is not None and gone.done()):
             return
         cancel = obj.get("cancel") is True
         picks = None if cancel else obj.get("pick")

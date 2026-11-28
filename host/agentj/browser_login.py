@@ -423,6 +423,10 @@ class LoginCards:
             return {"result": "failed", "why": "not_delivered"}
         if restricted:
             self._audit(c, "sent", by=by)
+            from . import card_reminder
+            if (getattr(owner.session(), "special_receipt", False)
+                    and card_reminder.channels(getattr(self.host, "preferences", {}))):
+                self.host._bg(self._remind_unshown(c), "login_qr_reminder")
         tg = await self._telegram(c)
         res = {"result": "sent", "id": cid, "ttl": ttl, "site": site,
                "devices": 1 if restricted else len(self.host._approvers()), "telegram": tg}
@@ -752,6 +756,20 @@ class LoginCards:
         with contextlib.suppress(Exception):
             self.host.hist_add({"k": "sys", "text": ""}, text, "done")
         await self.host.send_app(s, {"t": "login_qr_state", "id": c["id"], "state": "waiting", "why": why})
+
+    async def _remind_unshown(self, c):
+        """Only the original live login card can trigger a payload-free reminder."""
+        from . import card_reminder
+
+        def pending():
+            return (self._live(c) and c.get("delivered") and c.get("display") == "unconfirmed"
+                    and not self.host.stopped() and not c.get("refreshing") and not c.get("checking")
+                    and c["chat_epoch"] == str(self.host.hist.epoch) and self._profile_live(c)
+                    and c["owner"].still_paired(self.host))
+
+        await asyncio.sleep(10)
+        if pending():
+            await card_reminder.deliver(self.host, c["id"], pending, login=True)
 
     # ---------------------------------------------------------- Telegram text reminder
     async def _telegram(self, c: dict) -> str:

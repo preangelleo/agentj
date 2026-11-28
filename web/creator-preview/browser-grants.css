@@ -1,0 +1,14 @@
+/* Site grants appear inside the existing browser checklist. */
+.browser-grants{background:var(--c-noir);color:var(--c-lotion);color-scheme:dark;padding:var(--sp-3);margin-top:var(--sp-3);border:1px solid var(--line);border-radius:var(--sp-3)}
+.browser-grant-fields{display:grid;gap:var(--sp-3);margin-top:var(--sp-3)}
+.browser-grant-fields[hidden]{display:none}
+.browser-grant-field{display:grid;gap:var(--sp-1);font-size:var(--fs-sm)}
+.browser-grant-field :is(input,select){width:100%;min-height:44px;box-sizing:border-box;padding:var(--sp-2);font:inherit;color:var(--c-lotion);background:var(--c-sooty);caret-color:var(--c-lotion);border:1px solid var(--line);border-radius:var(--sp-2)}
+.browser-grant-list{padding:0;margin:0;list-style:none}
+.browser-grant-row{padding:var(--sp-3) 0;border-bottom:1px solid var(--line)}
+.browser-grant-fact{white-space:pre-line;overflow-wrap:anywhere;margin:0 0 var(--sp-2)}
+.browser-grants :is(.setup-group,.setup-note,.browser-grant-fact){color:inherit}
+.browser-grant-field input::selection{color:var(--c-lotion);background:var(--c-black-mana)}
+#confirm[data-browser-grant]{--ink:var(--c-lotion);--ink-soft:var(--c-lotion)}
+#confirm[data-browser-grant] #confirm-no{background:var(--c-lotion);color:var(--c-noir);border-color:var(--c-lotion)}
+.browser-grants .aj-action--primary{--aj-action-min-height:56px;--aj-action-primary-background:var(--c-lotion);--aj-action-primary-color:var(--c-noir);--aj-action-primary-border-color:var(--c-lotion);--aj-action-primary-hover-background:var(--c-lotion);--aj-action-primary-hover-border-color:var(--c-lotion)}

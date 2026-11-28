@@ -1,0 +1,226 @@
+{
+  "source": "ship/v0.30.79",
+  "staticRoots": [
+    "#badge-panel",
+    "#busyDlg",
+    "#cam",
+    "#confirm",
+    "#connDlg",
+    "#ctmEdit",
+    "#five-detail",
+    "#five-menu",
+    "#fsEd",
+    "#full541",
+    "#hotMenu",
+    "#keys",
+    "#loadDlg",
+    "#menu",
+    "#nameDlg",
+    "#ownerQueueDialog",
+    "#ptt",
+    "#quoteDlg",
+    "#rd",
+    "#renameDlg",
+    "#rvDlg",
+    "#session-help",
+    "#settings",
+    "#silent",
+    "#srch",
+    "#usageDlg",
+    "#version-notice"
+  ],
+  "producers": {
+    "approval-special541.js": [
+      ".showModal()"
+    ],
+    "approval541.js": [
+      ".showModal()"
+    ],
+    "assist-terminal.js": [
+      ".setAttribute('aria-modal', 'true')"
+    ],
+    "assist.js": [
+      ".setAttribute('aria-modal', 'true')"
+    ],
+    "calendar.js": [
+      ".showModal()",
+      ".showModal()"
+    ],
+    "cardplace.js": [
+      ".setAttribute('aria-modal', 'true')"
+    ],
+    "contacts.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'gdlg ct-dlg'",
+      "mk('div', 'gdlg-icon'",
+      "mk('div', 'gdlg-row'",
+      "mk('div', 'gdlg-row'"
+    ],
+    "elevate.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard elev'"
+    ],
+    "forms.js": [
+      ".setAttribute('aria-modal', 'true')"
+    ],
+    "helpcard.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard hlp'"
+    ],
+    "jcard-color.js": [
+      ".showModal()"
+    ],
+    "jcards.js": [
+      ".showModal()"
+    ],
+    "logincard.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard lqr'"
+    ],
+    "loginsheet.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard lgs'"
+    ],
+    "longtask.js": [
+      ".setAttribute('aria-modal', 'true')",
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard lt lt-caps'",
+      "mk('div', 'ajmodal dlgcard lt'"
+    ],
+    "mail-servers.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard elev'"
+    ],
+    "media.js": [
+      ".setAttribute('aria-modal', 'true')"
+    ],
+    "owner-queue.js": [
+      ".showModal()"
+    ],
+    "pkpeer.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard pkp'"
+    ],
+    "private-files.js": [
+      ".setAttribute('aria-modal','true')"
+    ],
+    "seatxfer.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard sxf'"
+    ],
+    "secretout.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard sout'"
+    ],
+    "terminal.js": [
+      ".setAttribute('aria-modal', 'true')",
+      ".setAttribute('aria-modal', 'true')"
+    ],
+    "wechat.js": [
+      ".setAttribute('aria-modal', 'true')",
+      "mk('div', 'ajmodal dlgcard'"
+    ]
+  },
+  "historical": [
+    "#cam|390|light|center|center-fill|98,152,135,1|250,249,245,1",
+    "recording-cancel|390|light|center|center-fill|58,23,18,1|250,249,245,1",
+    "single-secret|390|light|grow|off-quota|88,135,120,1|250,249,245,1",
+    "multi-secret|390|light|grow|off-quota+bottom-fill|44,43,38,1|250,249,245,1",
+    "login-qr|390|light|grow|bottom-fill|72,108,97,1|250,249,245,1",
+    "notebook-editor|390|light|grow|off-quota+bottom-fill|136,136,136,1|20,20,20,1",
+    "settings-secret|390|light|center|geometry|44,43,38,1|250,249,245,1",
+    "settings-device-passkey|390|light|center|geometry|44,43,38,1|250,249,245,1",
+    "terminal-sheet|390|light|grow|off-quota+bottom-fill|44,43,38,1|250,249,245,1",
+    "#cam|390|dark|center|center-fill|76,115,103,1|250,249,245,1",
+    "recording-cancel|390|dark|center|center-fill|58,23,18,1|250,249,245,1",
+    "single-secret|390|dark|grow|off-quota|69,103,92,1|250,249,245,1",
+    "multi-secret|390|dark|grow|off-quota+bottom-fill|44,43,38,1|250,249,245,1",
+    "login-qr|390|dark|grow|bottom-fill|64,94,85,1|250,249,245,1",
+    "notebook-editor|390|dark|grow|off-quota+bottom-fill|136,136,136,1|20,20,20,1",
+    "settings-secret|390|dark|center|geometry|44,43,38,1|250,249,245,1",
+    "settings-device-passkey|390|dark|center|geometry|44,43,38,1|250,249,245,1",
+    "terminal-sheet|390|dark|grow|off-quota+bottom-fill|44,43,38,1|250,249,245,1",
+    "#cam|1440|light|center|center-fill|98,152,135,1|250,249,245,1",
+    "recording-cancel|1440|light|center|center-fill|58,23,18,1|250,249,245,1",
+    "single-secret|1440|light|grow|off-quota|88,135,120,1|250,249,245,1",
+    "multi-secret|1440|light|grow|off-quota+bottom-fill|44,43,38,1|250,249,245,1",
+    "login-qr|1440|light|grow|bottom-fill|72,108,97,1|250,249,245,1",
+    "notebook-editor|1440|light|center|center-fill+center-ink|136,136,136,1|20,20,20,1",
+    "settings-secret|1440|light|center|geometry|44,43,38,1|250,249,245,1",
+    "settings-device-passkey|1440|light|center|geometry|44,43,38,1|250,249,245,1",
+    "#cam|1440|dark|center|center-fill|76,115,103,1|250,249,245,1",
+    "recording-cancel|1440|dark|center|center-fill|58,23,18,1|250,249,245,1",
+    "single-secret|1440|dark|grow|off-quota|69,103,92,1|250,249,245,1",
+    "multi-secret|1440|dark|grow|off-quota+bottom-fill|44,43,38,1|250,249,245,1",
+    "login-qr|1440|dark|grow|bottom-fill|64,94,85,1|250,249,245,1",
+    "notebook-editor|1440|dark|center|center-fill+center-ink|136,136,136,1|20,20,20,1",
+    "settings-secret|1440|dark|center|geometry|44,43,38,1|250,249,245,1",
+    "settings-device-passkey|1440|dark|center|geometry|44,43,38,1|250,249,245,1"
+  ],
+  "historicalForeground": [
+    "#ctmEdit|1440|dark|#ctm-e-save|color|rgb(20, 20, 20)",
+    "#ctmEdit|1440|light|#ctm-e-save|color|rgb(20, 20, 20)",
+    "#ctmEdit|390|dark|#ctm-e-save|color|rgb(20, 20, 20)",
+    "#ctmEdit|390|light|#ctm-e-save|color|rgb(20, 20, 20)",
+    "#ownerQueueDialog|1440|dark|#ownerQueueClose|color|rgb(20, 20, 20)",
+    "#ownerQueueDialog|1440|light|#ownerQueueClose|color|rgb(20, 20, 20)",
+    "#ownerQueueDialog|390|dark|#ownerQueueClose|color|rgb(20, 20, 20)",
+    "#ownerQueueDialog|390|light|#ownerQueueClose|color|rgb(20, 20, 20)",
+    "agent-login|1440|dark|#lgs-other|color|rgb(44, 43, 38)",
+    "agent-login|1440|light|#lgs-other|color|rgb(44, 43, 38)",
+    "agent-login|390|dark|#lgs-other|color|rgb(44, 43, 38)",
+    "agent-login|390|light|#lgs-other|color|rgb(44, 43, 38)",
+    "calendar-editor|1440|dark|dialog.jc-cal-dialog > form > div > p|color|rgb(202, 202, 219)",
+    "calendar-editor|1440|light|dialog.jc-cal-dialog > form > div > p|color|rgb(202, 202, 219)",
+    "capabilities|1440|dark|#lt-caps-box > div:nth-of-type(2) > details > summary > span|color|rgb(46, 125, 50)",
+    "capabilities|1440|light|#lt-caps-box > div:nth-of-type(2) > details > summary > span|color|rgb(46, 125, 50)",
+    "capabilities|390|dark|#lt-caps-box > div:nth-of-type(2) > details > summary > span|color|rgb(46, 125, 50)",
+    "capabilities|390|light|#lt-caps-box > div:nth-of-type(2) > details > summary > span|color|rgb(46, 125, 50)",
+    "multi-secret|1440|dark|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "multi-secret|1440|light|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "multi-secret|390|dark|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "multi-secret|390|light|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "notebook-editor|1440|dark|dialog[data-note-sheet] > h2|color|rgb(20, 20, 20)",
+    "notebook-editor|1440|dark|dialog[data-note-sheet] > input:nth-of-type(1)|::placeholder|rgb(117, 117, 117)",
+    "notebook-editor|1440|dark|dialog[data-note-sheet] > p|color|rgb(20, 20, 20)",
+    "notebook-editor|1440|light|dialog[data-note-sheet] > h2|color|rgb(20, 20, 20)",
+    "notebook-editor|1440|light|dialog[data-note-sheet] > input:nth-of-type(1)|::placeholder|rgb(117, 117, 117)",
+    "notebook-editor|1440|light|dialog[data-note-sheet] > p|color|rgb(20, 20, 20)",
+    "notebook-editor|390|dark|dialog[data-note-sheet] > h2|color|rgb(20, 20, 20)",
+    "notebook-editor|390|dark|dialog[data-note-sheet] > input:nth-of-type(1)|::placeholder|rgb(117, 117, 117)",
+    "notebook-editor|390|light|dialog[data-note-sheet] > h2|color|rgb(20, 20, 20)",
+    "notebook-editor|390|light|dialog[data-note-sheet] > input:nth-of-type(1)|::placeholder|rgb(117, 117, 117)",
+    "ordinary-approval|1440|dark|#tool|color|rgb(20, 20, 20)",
+    "ordinary-approval|1440|light|#approvalSource572 > p|color|rgb(20, 20, 20)",
+    "ordinary-approval|1440|light|#tool|color|rgb(20, 20, 20)",
+    "ordinary-approval|390|dark|#tool|color|rgb(20, 20, 20)",
+    "ordinary-approval|390|light|#approvalSource572 > p|color|rgb(20, 20, 20)",
+    "ordinary-approval|390|light|#tool|color|rgb(20, 20, 20)",
+    "owner-help|1440|dark|#hlp-done|color|rgb(44, 43, 38)",
+    "owner-help|1440|light|#hlp-done|color|rgb(44, 43, 38)",
+    "owner-help|390|dark|#hlp-done|color|rgb(44, 43, 38)",
+    "owner-help|390|light|#hlp-done|color|rgb(44, 43, 38)",
+    "seat-transfer|1440|dark|#sxf-copy|color|rgb(44, 43, 38)",
+    "seat-transfer|1440|light|#sxf-copy|color|rgb(44, 43, 38)",
+    "seat-transfer|390|dark|#sxf-copy|color|rgb(44, 43, 38)",
+    "seat-transfer|390|light|#sxf-copy|color|rgb(44, 43, 38)",
+    "secret-pickup|1440|dark|#sout-kicker|color|rgb(98, 152, 135)",
+    "secret-pickup|1440|light|#sout-kicker|color|rgb(98, 152, 135)",
+    "secret-pickup|390|dark|#sout-kicker|color|rgb(98, 152, 135)",
+    "secret-pickup|390|light|#sout-kicker|color|rgb(98, 152, 135)",
+    "settings-secret|1440|dark|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "settings-secret|1440|light|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "settings-secret|390|dark|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "settings-secret|390|light|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "single-secret|1440|dark|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "single-secret|1440|light|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "single-secret|1440|light|#elev-kicker|color|rgb(20, 20, 20)",
+    "single-secret|390|dark|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "single-secret|390|light|#elev-input|::placeholder|rgb(117, 117, 117)",
+    "single-secret|390|light|#elev-kicker|color|rgb(20, 20, 20)",
+    "terminal-sheet|1440|dark|#term-sh-yes|color|rgb(20, 20, 20)",
+    "terminal-sheet|1440|light|#term-sh-yes|color|rgb(20, 20, 20)",
+    "terminal-sheet|390|dark|#term-sh-yes|color|rgb(20, 20, 20)",
+    "terminal-sheet|390|light|#term-sh-yes|color|rgb(20, 20, 20)"
+  ]
+}

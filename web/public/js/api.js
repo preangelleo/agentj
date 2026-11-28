@@ -157,6 +157,32 @@ export function allowPicks(p, allowAdd) {
 }
 
 export const APPROVE_HANDIN_MS = 120000;
+
+// A reconnect clears the page's pending-card snapshot. A passkey response can
+// cross that gap only if the Host still offers the exact request and challenge.
+function sameApproval(p, current) {
+  // The v2 envelope and the legacy same-owner grant verify their challenges asynchronously.
+  const challengePending = (current.approval_v === 2 && !current.envelope_verified)
+    || (current.tool === 'agentj secret grant' && !current.owner_grant_verified);
+  const challengeMatches = p.fa_ch === current.fa_ch || challengePending;
+  return p.approval_v === current.approval_v && p.tool === current.tool && p.summary === current.summary
+    && p.scope === current.scope && p.task_scope === current.task_scope && p.fa === current.fa && challengeMatches
+    && p.revision === current.revision && p.envelope_sha256 === current.envelope_sha256;
+}
+
+function approvalHandInLive(p) {
+  const current = snap.S.asks.get(p.id);
+  return p.state === 'open' && !snap.cardExpired(p) && snap.S.lastAsk?.id !== p.id
+    && (!current || (sameApproval(p, current) && snap.cardCanAnswer(current)));
+}
+
+function approvalHandInReady(p) {
+  const current = snap.S.asks.get(p.id);
+  return current && sameApproval(p, current) && p.fa_ch === current.fa_ch
+    && snap.cardCanAnswer(current) && !current.approval_invalid
+    && (current.approval_v !== 2 || current.envelope_verified === true)
+    && (current.tool !== 'agentj secret grant' || current.owner_grant_verified === true);
+}
 let H = {};
 /** app.js: {handing(id), handed(id)} — 「正在补交…」 while a Face ID approval waits for the Agent J host, and its end. */
 export function configureApprove(h) { H = h || {}; }
@@ -165,6 +191,7 @@ export function configureApprove(h) { H = h || {}; }
 export async function approve(p, action, allowAdd) {
   if (!p || typeof p !== "object") return {ok:false,why:"invalid_envelope"};
   if (p.approval_invalid || (p.approval_v !== undefined && p.approval_v !== 2) || (p.approval_v === 2 && !p.envelope_verified)) return {ok:false,why:"invalid_envelope"};
+  if (!snap.cardCanAnswer(p)) return {ok: false, why: "request_ended"};
   touch(p.id);
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
@@ -181,6 +208,7 @@ export async function approve(p, action, allowAdd) {
   }
   const sk = await signKey();
   if (!sk) return { ok: false, why: 'no_key' };
+  const live = () => fa ? approvalHandInLive(p) : snap.cardCanAnswer(p);
   try {
     const batch = action === 'batch';
     if (batch && !p.scope) return { ok: false, why: 'no_batch' };
@@ -188,7 +216,9 @@ export async function approve(p, action, allowAdd) {
     const picks = decision === 'allow' ? allowPicks(p, allowAdd) : [];
     const msg = p.approval_v === 2 ? await approvalV2Message(ch, await myDeviceId(), p, decision, picks) : picks.length ? await mailAllowMessage(ch, await myDeviceId(), p.id, p.tool, p.summary, picks, p.task_scope)
       : await approveMessage(ch, await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined, p.task_scope);
+    if (!live()) return {ok: false, why: "request_ended"};
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
+    if (!live()) return {ok: false, why: "request_ended"};
     const out = batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) };
     if (p.approval_v === 2) Object.assign(out, {approval_v:2,revision:p.revision,envelope_sha256:p.envelope_sha256});
     // P561 (追加 6, #335): the passkey sheet may have cost the socket — the signed answer (bound to the card, not the session)
@@ -197,10 +227,11 @@ export async function approve(p, action, allowAdd) {
     // copy of a decided card is dropped by the Agent J host (unknown / already decided)
     if (!fa) await sendApp(out, g);
     else {
-      const sent = await handIn('ask:' + p.id, { send: (g2) => sendApp(out, g2), until: Date.now() + APPROVE_HANDIN_MS, ch,
-        waiting: () => H.handing?.(p.id) });
+      const sent = await handIn('ask:' + p.id, { send: (g2) => sendApp(out, g2),
+        until: Math.min(Date.now() + APPROVE_HANDIN_MS, p.deadline), live, ch,
+        ready: () => approvalHandInReady(p), waiting: () => H.handing?.(p.id) });
       H.handed?.(p.id);                                // the 「正在补交…」 notice goes either way
-      if (!sent) throw new Error('offline');
+      if (!sent) return {ok: false, why: live() ? "offline" : "request_ended"};
     }
     return { ok: true };
   } catch { return { ok: false, why: 'offline' }; }
@@ -208,6 +239,7 @@ export async function approve(p, action, allowAdd) {
 
 /** picks = [[1,3],[2]] (1-based) or null = 取消问题. Signed over the questions as shown (§10.7). */
 export async function answerQ(q, picks) {
+  if (!snap.cardCanAnswer(q)) return {ok: false, why: "request_ended"};
   touch(q.id);
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
@@ -216,7 +248,9 @@ export async function answerQ(q, picks) {
   try {
     const clean = picks ? picks.map((p) => typeof p === "string" ? p : [...new Set(p)].sort((a, b) => a - b)) : null;
     const msg = await questionMessage(channel(), await myDeviceId(), q.id, clean ? 'answer' : 'cancel', q.raw, clean);
+    if (!snap.cardCanAnswer(q)) return {ok: false, why: "request_ended"};
     const sig = b64u(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg)));
+    if (!snap.cardCanAnswer(q)) return {ok: false, why: "request_ended"};
     await sendApp(clean ? { t: 'q_answer', id: q.id, pick: clean, sig } : { t: 'q_answer', id: q.id, cancel: true, sig }, g);
     return { ok: true };
   } catch { return { ok: false, why: 'offline' }; }
@@ -428,11 +462,13 @@ export async function readHistory(epoch, id) {
 
 /** #541 review intents carry no execution authority and remain paired/session bound. */
 export async function approvalReview(p,op,biometric){
+ if(op==='question'&&p.kind==='permission'&&!snap.cardCanAnswer(p))return {ok:false,why:'request_ended'};
  const g=gen();if(!g)return {ok:false,why:'offline'};
  try{
   const event_id=newId(),sk=await signKey();if(!sk)return {ok:false,why:'no_key'};
   const msg=approvalReviewMessage(channel(),await myDeviceId(),p,op,event_id);
   const sig=b64u(new Uint8Array(await crypto.subtle.sign({name:'Ed25519'},sk.priv,msg)));
+  if(op==='question'&&p.kind==='permission'&&!snap.cardCanAnswer(p))return {ok:false,why:'request_ended'};
   let timer;const waiting=new Promise(resolve=>{reviewWait.set(event_id,resolve);timer=setTimeout(()=>{reviewWait.delete(event_id);resolve({ok:false,why:'timeout'});},15000);});
   try{await sendApp({t:'approval_review',id:p.id,op,revision:p.revision,event_id,biometric,envelope_sha256:p.envelope_sha256,sig},g);}catch{clearTimeout(timer);reviewWait.delete(event_id);return {ok:false,why:'offline'};}
   const result=await waiting;clearTimeout(timer);return result;

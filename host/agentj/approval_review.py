@@ -443,6 +443,13 @@ def submit_event(host, ask, op, event_id, biometric='Touch ID', device=None):
     return text
 
 
+def renewal_live(host, ask):
+    from .list_approval import state_live
+    return (state_live(host, ask) and not host.stopped() and not host.stopping.is_set()
+            and host.agent is ask.review_agent and str(host.hist.epoch) == ask.envelope['session']
+            and ask.review_thread == thread_ref(host.agent))
+
+
 async def on_phone(host, s, obj):
     from . import wire
     rid, op = obj.get('id'), obj.get('op')
@@ -451,6 +458,9 @@ async def on_phone(host, s, obj):
         return await special.on_phone(s, obj)
     ask = host.asks.get(rid) if isinstance(rid, str) else None
     result = {'t': 'approval_review_result', 'id': rid if isinstance(rid, str) else '', 'op': op, 'ok': False}
+    submitted_event = obj.get('event_id')
+    if op == 'renew' and isinstance(submitted_event, str) and re.fullmatch(r'[A-Za-z0-9_-]{16,80}', submitted_event):
+        result['event_id'] = submitted_event
     async def refuse(why):
         await host.send_app(s, {**result, 'why': why})
     if ask is None:
@@ -485,6 +495,8 @@ async def on_phone(host, s, obj):
     if host.stopped() or host.agent is not ask.review_agent or str(host.hist.epoch) != ask.envelope['session']:
         return await refuse('authority_changed')
     if op == 'renew':
+        if not renewal_live(host, ask):
+            return await refuse('authority_changed')
         if ask.review_state != 'expired' or not ask.fut.done() or not getattr(ask, 'review_waiter_ended', False):
             return await refuse('not_safely_expired')
         # The host is an authorization broker, not the arbitrary tool's executor. Never approve an empty replacement:
@@ -492,7 +504,7 @@ async def on_phone(host, s, obj):
         if not getattr(ask, 'review_renew_event', None):
             ask.review_renew_event = eid
             submit_event(host, ask, 'renew', eid, device=s.device)
-        result.update(ok=True, event_id=ask.review_renew_event, state='restart_requested', why='new_request_required')
+        result.update(ok=True, queued_event_id=ask.review_renew_event, state='restart_requested', why='new_request_required')
     elif ask.fut.done() or time.monotonic() >= ask.deadline:
         return await refuse('expired')
     elif op == 'question':

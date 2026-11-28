@@ -6229,5 +6229,10 @@
   "p0371.oldfix.why": "The update did not finish, most likely a known fault in this older updater; this Agent J host still runs {v} as before, pairing and settings unchanged. The line below makes Agent J's own dependency cache writable only by you, then updates and restarts Agent J at once, interrupting any task in progress. Running it in the host's terminal usually updates it; a web terminal disconnects at the end (reopen it, check agentj --version). If it still fails, do not run it again: contact support via the repair guide.",
   "p0371.oldfix.raw": "Show the original message",
   "p0371.oldfix.cut": "The terminal disconnected. At the last step of an update this is expected: reopen it and check agentj --version.",
-  "p0371.oldfix.run": "Run and update"
+  "p0371.oldfix.run": "Run and update",
+  "rtaj.approvalElapsed": "This approval is no longer active. Ask the Agent for a new card.",
+  "rtaj.approvalExpired": "This approval expired. Ask the Agent for a new card.",
+  "rtaj.requestAgain": "Ask for a new card",
+  "rtaj.renewUnavailable": "Could not request a new card. Ask the Agent to try again in chat.",
+  "rtaj.approvalGone": "The original request ended before this approval could take effect. Ask the Agent for a new card."
 }

@@ -437,7 +437,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
             answer = None
         finally:
             self.questions.pop(fid, None)
-        if gone.done() or not client:
+        if gone.done() or not client or self.client is not client:
             return
         if autonomous:
             # The native form cannot carry free-text policy in an enum field. Add a
@@ -456,7 +456,9 @@ class OpenCodeV2Agent(OpenCodeAgent):
 
     async def _reply_permission(self, rid: str, reply: str, msg: str, sid=None) -> None:
         body = {"decision": reply} if reply == "once" else {"decision": "reject", "message": msg}
-        sid = sid if sid in self.children else self.sid        # P426: a sub-agent's request is answered on its session
+        sid = sid or self.sid        # P426: a sub-agent's request is answered on its original session
+        if sid != self.sid and sid not in self.children:
+            return                   # the admitted child is gone, never retarget to the parent
         await self.client.request("POST", f"/api/session/{quote(sid)}/permission/{quote(rid)}/reply", body)
 
     # ------------------------------------------------ P426: sub-agents (child sessions)
@@ -481,25 +483,25 @@ class OpenCodeV2Agent(OpenCodeAgent):
         if not c or not self.sid:
             return
         with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
-            st, reqs = await c.request("GET", f"/api/session/{quote(self.sid)}/permission")
-            if not self._sync_current(owner):
-                return
-            reqs = _data(reqs)
-            if st == 200 and isinstance(reqs, list):
-                live = {r.get("id") for r in reqs if isinstance(r, dict)}
-                for rid, f in list(self.pending.items()):
-                    if rid not in live and not f.done():
-                        f.set_result(True)
-                for r in reqs:
-                    if isinstance(r, dict):
-                        self._on_perm(to_v1_request(r))
-            for cid in list(self.children)[-8:]:            # P426: a sub-agent's request that went by while it was down
-                st, reqs = await c.request("GET", f"/api/session/{quote(cid)}/permission")
+            for sid in (self.sid, *list(self.children)[-8:]):
+                sessions = getattr(self, 'perm_sid', {})
+                pending = [(rid, f) for rid, f in self.pending.items() if sessions.get(rid, self.sid) == sid]
+                st, reqs = await c.request("GET", f"/api/session/{quote(sid)}/permission")
                 if not self._sync_current(owner):
                     return
-                for r in _data(reqs) if st == 200 and isinstance(_data(reqs), list) else []:
-                    if isinstance(r, dict):
-                        self._on_perm(to_v1_request(r))
+                reqs = _data(reqs)
+                if st != 200 or not isinstance(reqs, list):
+                    continue
+                valid = [r for r in reqs if isinstance(r, dict) and isinstance(r.get('id'), str)
+                         and r.get('sessionID', sid) == sid]
+                if len(valid) != len(reqs):
+                    continue       # an incoherent snapshot cannot establish that a request is gone
+                live = {r['id'] for r in valid}
+                for rid, f in pending:
+                    if rid not in live and not f.done():
+                        f.set_result(True)
+                for r in valid:
+                    self._on_perm(to_v1_request({**r, 'sessionID': sid}))
             await self._catch_up()
             if not self._sync_current(owner):
                 return

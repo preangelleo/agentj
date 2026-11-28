@@ -155,6 +155,7 @@ COMMANDS = MappingProxyType({
     'vault.share': 'Share a saved host login password with another remote.',
     'budget.set': 'Increase a spending safety limit (lowering a limit remains a signed tap).',
     'approval.set': 'Change the approval security policy.',
+    'browser_grant': 'Grant time-limited access to one dedicated browser creator account.',
     'device.revoke': 'Remove a trusted remote from the paired device roster.',
     'passkey.reset': 'Replace the owner verification trust root.',
     'agentj secret send': 'Expose a secret to the confirming remote or an external destination.',

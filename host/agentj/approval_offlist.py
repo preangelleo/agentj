@@ -34,7 +34,7 @@ import secrets
 # Together with uv_list.required() this IS the card list. A native (harness) request may only use AskUserQuestion.
 CARD_LIST = frozenset({"FriendsTellOnce", "AskUserQuestion", "SandboxOnce", "AuthRescue", "AgentJBoundedPlan", "company.write",
                        "agentj core mcp add", "agentj learn", "agentj plaza", "agentj local record", "agentj local relink",
-                       "agentj relay"})   # 0.30.29 relay_full: one Face ID card per full-permission Relay job
+                       "agentj relay", "agentj google youtube upload"})
 NATIVE_CARDS = frozenset({"AskUserQuestion"})
 
 TRUST = ("owner", "host", "host_read", "external", "unknown")

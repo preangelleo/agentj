@@ -1,5 +1,5 @@
-# Agent J v0.30.79
+# Agent J v0.30.80
 
-Fixes failed file sends from a paired remote. Ask for a file in your linked WeChat chat. Updates clear old downloads they no longer need.
+Background notices survive restart. Verified pending tasks resume after recovery. Each YouTube upload needs approval.
 
-修复遥控器回合里偶尔发不出文件或图片的问题。绑定微信可以直接要文件。升级后会清理用不到的旧下载。
+后台任务完成提示可跨重启补送。可核实未提交的任务会在恢复后续做。YouTube 上传逐次在遥控器确认。

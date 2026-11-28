@@ -989,3 +989,7 @@ An Agent J-owned AuthRescue `ask` carries `host_tool:true`, set by the host's
 tool name or caller-provided label is insufficient. The marker is presentation
 metadata and grants no approval, UV, source or credential authority. Existing
 signed card/envelope and initiating-device checks remain mandatory.
+
+### Browser creator access (0.30.80 candidate)
+
+On the existing encrypted paired app session, `browser_grants` returns `ctl_res` with `available` and a bounded `grants` list. `browser_grant_prepare` takes a registered `site`, exact `account` and `minutes` from 15, 60 or 480, and returns a host-created `target` after checking the dedicated browser. `browser_grant` signs that full canonical object using the existing control signature and owner UV challenge. Prepare offers expire in at most 120 seconds and are tied to the same live paired connection. `browser_grant_revoke` signs `{"id":"<grant-id>"}`. All replies use `ctl_res` with the original request id. The phone negotiates availability with `creator_site_grants: true` in `setup_card`. The Host holds grants in memory.

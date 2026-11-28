@@ -79,6 +79,19 @@ def state_live(host, ask):
     return subject is None or (type(subject) is StateSubject and subject.live(host))
 
 
+def waiter_unavailable(ask):
+    gone = getattr(ask, 'request_gone', None)
+    return (gone is not None and gone.done()) or time.monotonic() >= ask.deadline
+
+
+def unavailable_receipt(host, ask):
+    frame = getattr(ask, 'unavailable_receipt', None)
+    if (frame and getattr(ask, 'offer_renewal', False) and approval_review.renewal_live(host, ask)
+            and not getattr(ask, 'review_renew_event', None)):
+        return {**frame, 'renewable': True}
+    return frame
+
+
 def state_changed(host, ask):
     """Retire the pending card without touching a replacement State's files."""
     host.asks.pop(ask.rid, None)
@@ -346,7 +359,8 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     # Only concrete Host executors own these historical display/proof strings.
     # Native tool parameters may contain a model-authored summary: always show
     # their actual canonical arguments instead of trusting that field.
-    host_summary = (not harness_permission and tool in ('agentj mail workflow-grant','agentj automation grant','agentj secret grant','AuthRescue','AgentJBoundedPlan')
+    host_summary = (not harness_permission and tool in ('agentj mail workflow-grant','agentj automation grant','agentj secret grant','AuthRescue','AgentJBoundedPlan',
+                                                 'agentj google youtube upload')
                     and isinstance(inp.get('summary'),str))
     # Privacy scanning is awaited I/O. Pin the request's real subject before
     # yielding; an old native request cannot bind to the next owner turn.
@@ -432,6 +446,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
             only=only, host_card=host_card, settings_session=settings_session,
             reason=tool)
     a.state_subject = state_subject
+    a.request_gone = gone
     a.list_model = True
     a._list_display_snapshot = summary
     a.display_normalizer = display
@@ -476,19 +491,25 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         done,_ = await asyncio.wait(waits, timeout=max(0,a.deadline-time.monotonic()), return_when=asyncio.FIRST_COMPLETED)
         if not state_subject.live(host):
             return state_changed(host, a)
-        if a.review_pause in done and not a.fut.done():
+        if gone is not None and gone.done():
+            decision,did,sk,sig = 'deny',None,None,None
+            reason = 'agent_gone'
+        elif a.review_pause in done and not a.fut.done():
             return host._park(a,base,summary,host._park_key(tool,isha),None,why='question')
-        if a.fut in done:
+        elif a.fut in done:
             decision,did,sk,sig = a.fut.result()
             reason = 'device' if did else 'estop' if host.stopped() else getattr(a,'withdrawn',None) or 'serve_stop'
         else:
             decision,did,sk,sig = 'deny',None,None,None
-            reason = 'agent_gone' if gone is not None and gone in done else 'timeout'
-            if not a.fut.done():
-                a.fut.set_result((decision,did,sk,sig))
+            reason = 'timeout'
+        if not a.fut.done():
+            a.fut.set_result((decision,did,sk,sig))
         # Never turn a task grant, parked old grant, or a simulated answer into UV.
+        if decision == 'allow' and time.monotonic() >= a.deadline:
+            decision,reason = 'deny','timeout'
+            did = sk = sig = None
         if decision == 'allow' and (reason != 'device' or not sk or host.st.sign_key(did) != sk
-                or not subject_live() or time.monotonic() > a.deadline
+                or not subject_live()
                 or (uv and not a.uv_ok) or (native_context is not None and not native_context.live(host))
                 or (settings_context is not None and not settings_context.live(host))):
             decision,reason = 'deny','authority_changed'
@@ -508,7 +529,20 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     host.st.log('ask_done',id=rid,tool=tool,decision=decision,reason=reason,device=did)
     host.activity('decision',id=rid,tool=tool,result=decision,reason=reason,cats=[],summary=summary)
     host.emit('ask_done',id=rid,result=decision,reason=reason,device=did)
-    host._post(host._send_ready,lambda s:{'t':'ask_done','id':rid,'result':decision,'reason':reason})
+    done_frame = {'t':'ask_done','id':rid,'result':decision,'reason':reason}
+    if reason in ('timeout', 'agent_gone'):
+        a.unavailable_receipt = done_frame
+    from . import provenance
+    # This is only an offer to send a new signed request asking the same Agent
+    # to check and re-request. It does not authorize the old action or replay it.
+    a.offer_renewal = (reason == 'timeout' and a.fut.result()[0] == 'deny'
+        and gone is not None and harness_permission and background is None
+        and not host_card and not grant_info and task_actions is None
+        and request_typed['type'] in ('owner_remote', 'owner_terminal')
+        and request_origin is not None and request_origin.get('verified') is True and not request_origin.get('suspicious')
+        and provenance._REQUEST.get() is provenance._UNSET and provenance._shared_child(request_agent) is provenance._UNSET
+        and type(native_context) is not PermissionContext)
+    host._post(host._send_ready, lambda s: unavailable_receipt(host, a) or done_frame)
     host.status_changed()
     if isinstance(receipt,dict):
         receipt.update(reason=reason,approval_card_shown=None)
@@ -522,7 +556,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         return result
     messages = {'device':'主人在手机上拒绝了 / The owner denied this request.',
                 'timeout':'确认已过期，未执行 / Approval expired; no operation executed.',
-                'agent_gone':'原请求已结束，未执行 / The original request ended; no operation executed.'}
+                'agent_gone':'原请求已结束，这次确认未生效 / The original request ended before this confirmation could apply.'}
     return {'behavior':'deny','reason':reason,'message':messages.get(reason,'确认已失效，未执行 / Approval is no longer valid; no operation executed.')}
 
 

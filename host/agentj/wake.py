@@ -2,6 +2,7 @@
 Chinese uses pypinyin, English uses the model's public CMU-style lexicon.
 Unknown proper names fail with a pronunciation request; never silently use Jarvis.
 """
+from collections import deque
 from functools import lru_cache
 import re
 import hashlib
@@ -10,6 +11,7 @@ import struct
 from .preferences import DATA, ConfigError
 
 # AJP2 adds pronunciation prefixes. AJP3 marks record starts with the high bit.
+# AJP4 pronunciation headers encode the prefix count and a four-record lookback.
 DICTIONARY_FRAME_MAX = 4 * 1024 * 1024
 DICTIONARY_RAW_MAX = 4 * 1024 * 1024
 _DICTIONARY_HEADER = struct.Struct('>4sIIB')
@@ -46,8 +48,9 @@ def decode_dictionary(blob):
     if len(frame) < _DICTIONARY_HEADER.size:
         raise ValueError('truncated dictionary header')
     magic, count, word_size, nphones = _DICTIONARY_HEADER.unpack_from(frame)
-    packed = magic == b'AJP3'
-    if magic not in (b'AJP1', b'AJP2', b'AJP3') or not 0 < count <= 200000 or not 0 < nphones < (128 if packed else 256):
+    packed = magic in (b'AJP3', b'AJP4')
+    if (magic not in (b'AJP1', b'AJP2', b'AJP3', b'AJP4')
+            or not 0 < count <= 200000 or not 0 < nphones < (128 if packed else 256)):
         raise ValueError('invalid dictionary header')
     position, table = _DICTIONARY_HEADER.size, []
     for _ in range(nphones):
@@ -69,6 +72,7 @@ def decode_dictionary(blob):
     words, sounds = frame[position:position + word_size], frame[position + word_size:]
     wi = si = 0
     previous, previous_ids, output = b'', b'', bytearray()
+    recent = deque(maxlen=4) if magic == b'AJP4' else None
     for _ in range(count):
         word_record, wi = _dictionary_record(words, wi, packed)
         prefix = word_record[0]
@@ -83,14 +87,23 @@ def decode_dictionary(blob):
             raise ValueError('invalid dictionary word encoding') from error
         ids, si = _dictionary_record(sounds, si, packed)
         if magic != b'AJP1':
-            if not 1 <= ids[0] <= len(previous_ids) + 1:
+            prefix_code = ids[0]
+            base = previous_ids
+            if recent is not None:
+                prefix_code, distance = divmod(prefix_code, 4)
+                if distance >= max(1, len(recent)):
+                    raise ValueError('invalid dictionary pronunciation reference')
+                base = recent[distance] if recent else b''
+            if not 1 <= prefix_code <= len(base) + 1:
                 raise ValueError('invalid dictionary pronunciation prefix')
-            ids = previous_ids[:ids[0] - 1] + ids[1:]
+            ids = base[:prefix_code - 1] + ids[1:]
         if not 0 < len(ids) <= 256 or any(not 0 < code <= nphones for code in ids):
             raise ValueError('invalid dictionary pronunciation')
         output += word + b' ' + b' '.join(table[code - 1] for code in ids) + b'\n'
         if len(output) > DICTIONARY_RAW_MAX:
             raise ValueError('dictionary output limit exceeded')
+        if recent is not None:
+            recent.appendleft(ids)
         previous, previous_ids = word, ids
     if wi != len(words) or si != len(sounds):
         raise ValueError('trailing dictionary records')

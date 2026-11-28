@@ -273,7 +273,7 @@ class CardListInventory(unittest.TestCase):
         self.assertEqual({'AskUserQuestion', 'SandboxOnce', 'AuthRescue', 'AgentJBoundedPlan', 'company.write',
                           'agentj core mcp add', 'agentj learn', 'agentj plaza',
                           'FriendsTellOnce', 'agentj local record', 'agentj local relink',
-                          'agentj relay'}, set(approval_offlist.CARD_LIST))
+                          'agentj relay', 'agentj google youtube upload'}, set(approval_offlist.CARD_LIST))
         self.assertEqual({'AskUserQuestion'}, set(approval_offlist.NATIVE_CARDS))
 
 

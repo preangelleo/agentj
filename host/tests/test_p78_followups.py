@@ -114,6 +114,7 @@ class UpgradeQualification(unittest.TestCase):
         rows = [{'id':'main-core','status':'ok'}, {'id':'root-structure','status':'fail'}]
         self.assertEqual(update.upgrade_health(rows), (False,['root-structure']))
         self.assertEqual(update.upgrade_health([{'id':'main-core','status':'fail'}]), (True,[]))
+        self.assertEqual(update.upgrade_health([{'id':'main-config','status':'fail'}]), (True,[]))
         self.assertEqual(update.upgrade_health([{'status':'fail'}]), (True,[]))
         self.assertEqual(update.upgrade_health([]), (True,[]))
         self.assertEqual(update.upgrade_health([{'id':'upgrade-restart','status':'fail'}]), (True,[]))
