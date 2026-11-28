@@ -242,16 +242,6 @@ async function noteShot(p, state) {
   }
 }
 
-function rgbLuminance(color) {
-  const channels = color.match(/^rgb\((\d+), (\d+), (\d+)\)$/)?.slice(1);
-  if (!channels) return null;
-  const [red, green, blue] = channels.map(channel => {
-    const value = Number(channel) / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-}
-
 async function noteSheetLayout(p, dialog, field, state) {
   const m = await measure(p, field);
   const layout = await dialog.evaluate(el => {
@@ -265,7 +255,7 @@ async function noteSheetLayout(p, dialog, field, state) {
       text.selectNodeContents(button);
       const labelBounds = rect(text);
       return { ...bounds, label: button.textContent.trim(), background: style.backgroundColor, color: style.color,
-        opacity: Number(style.opacity), bordered: ['Top', 'Right', 'Bottom', 'Left'].some(side => parseFloat(style[`border${side}Width`]) > 0),
+        opacity: Number(style.opacity), borderWidth: parseFloat(style.borderTopWidth), borderColor: style.borderTopColor,
         shadow: style.boxShadow,
         enabled: !button.disabled,
         labelFits: text.getClientRects().length === 1 && labelBounds.left >= left && labelBounds.right <= bounds.right,
@@ -275,10 +265,11 @@ async function noteSheetLayout(p, dialog, field, state) {
     const dialog = rect(el), css = getComputedStyle(el);
     const send = document.getElementById('send'), sendBox = rect(send), save = actions.at(-1);
     const saveX = save.left + save.width / 2, saveY = save.top + save.height / 2;
-    const safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ios-safe-bottom')) || 0;
     return { actions, dialog, gapBelow: Math.round(bottom - dialog.bottom),
       actionGap: Math.round(bottom - Math.max(...actions.map(b => b.bottom))), top, bottom,
-      theme: document.documentElement.dataset.theme, dialogBackground: css.backgroundColor, safeBottom,
+      theme: document.documentElement.dataset.theme, dialogBackground: css.backgroundColor,
+      waterBackground: getComputedStyle(document.getElementById('water')).backgroundColor,
+      quotaTop: document.getElementById('m5h').getBoundingClientRect().top,
       coversDisabledSend: send.disabled && saveX >= sendBox.left && saveX <= sendBox.right && saveY >= sendBox.top && saveY <= sendBox.bottom,
       positioning: { top: css.top, bottom: css.bottom, height: css.height, maxHeight: css.maxHeight, transform: css.transform } };
   });
@@ -287,24 +278,24 @@ async function noteSheetLayout(p, dialog, field, state) {
   const sameRow = actions.every((b, i) => !i || (Math.abs(b.top - actions[0].top) < 1 && b.left - actions[i - 1].right >= 7.5));
   const hitTargets = actions.every(b => b.enabled && b.width >= 44 && b.height >= 44 && b.left >= layout.dialog.left && b.right <= layout.dialog.right
     && b.top >= top && b.bottom <= bottom && b.labelFits && b.hit);
-  const argent = 'rgb(136, 136, 136)', lotion = 'rgb(250, 249, 245)', noir = 'rgb(44, 43, 38)';
+  const lotion = 'rgb(250, 249, 245)', noir = 'rgb(44, 43, 38)';
   const solidColors = actions.every((b, i) => b.background === (i === 3 ? lotion : noir) && b.color === (i === 3 ? noir : lotion));
   const copy = actions.map(b => b.label).join('|') === labels.join('|');
   const keyboard = state.startsWith('keyboard') && state !== 'keyboard-dismissed';
-  const panelLuminance = rgbLuminance(layout.dialogBackground), noirLuminance = rgbLuminance(noir);
-  const fillContrast = panelLuminance === null ? 0 : (Math.max(panelLuminance, noirLuminance) + .05) / (Math.min(panelLuminance, noirLuminance) + .05);
-  const solidSecondary = fillContrast >= 3 && actions.slice(0, 3).every(action => action.opacity === 1 && !action.bordered && action.shadow === 'none');
+  const solidSecondary = actions.slice(0, 3).every(action => action.opacity === 1 && action.borderWidth >= 1
+    && action.borderColor === lotion && action.shadow === 'none');
   const viewportPlacement = p.geo.kb
-    ? gapBelow <= 1 && actionGap >= layout.safeBottom
+    ? Math.abs(layout.dialog.bottom - layout.quotaTop) <= 2 && layout.dialog.width === p.geo.w
     : Math.abs(layout.dialog.top + layout.dialog.bottom - top - bottom) <= 2;
+  const expectedFill = p.geo.kb ? layout.waterBackground : noir;
   const ok = layout.theme === p.theme && m.inside && m.focused && !m.cover.length && actions.length === 4 && sameRow && hitTargets && solidColors && copy
-    && layout.dialogBackground === argent && solidSecondary
+    && layout.dialogBackground === expectedFill && solidSecondary
     && actions[0].top >= m.rect[1] + 7.5
     && layout.dialog.top >= top - 0.5 && gapBelow >= 0
     && (keyboard ? gapBelow <= 32 && actionGap <= 56 : viewportPlacement);
   const name = `notebook-add-${p.geo.w}-${p.language}-${p.theme}-${state}`;
-  rows.push({ case: name, field: m.id, ok, ...m, ...layout, sameRow, hitTargets, solidColors, copy, solidSecondary, fillContrast, ...(keyboard ? {} : { viewportPlacement }) });
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} · field ${m.rect} in ${m.view}; actions ${actions.map(b => Math.round(b.top)).join('/')}; action gap ${actionGap}px; ${hitTargets ? 'hit targets visible' : 'hit target failed'}; panel gap ${gapBelow}px; Noir contrast ${fillContrast.toFixed(2)}`);
+  rows.push({ case: name, field: m.id, ok, ...m, ...layout, sameRow, hitTargets, solidColors, copy, solidSecondary, ...(keyboard ? {} : { viewportPlacement }) });
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} · field ${m.rect} in ${m.view}; actions ${actions.map(b => Math.round(b.top)).join('/')}; action gap ${actionGap}px; ${hitTargets ? 'hit targets visible' : 'hit target failed'}; panel gap ${gapBelow}px; waterline ${Math.round(layout.quotaTop)}px`);
   return ok;
 }
 
@@ -492,9 +483,30 @@ const CASES = {
   },
   'secret-card': async (p) => {
     await turn(p);
-    await fake.send({ t: 'elev', id: hex(16), kind: 'secret', n: hex(16), epk: epk(), ttl: 120, tries: 3, name: 'EXAMPLE_API_KEY', purpose: '天气查询服务', dest: 'EXAMPLE_API_KEY', verify: '' });
-    await p.waitForFunction(() => document.getElementById('elev') && !document.getElementById('elev').hidden); await p.waitForTimeout(400);
-    await sweep(p, 'secret-card', '#elev', { shotFirst: true });
+    for (const names of [null, ['EXAMPLE_FIRST', 'EXAMPLE_SECOND']]) {
+      const name = names ? 'multi-secret' : 'single-secret';
+      await fake.send({ t: 'elev', id: hex(16), kind: 'secret', n: hex(16), epk: epk(), ttl: 120, tries: 3,
+        name: names ? names.join(', ') : 'EXAMPLE_API_KEY', ...(names ? { names } : {}),
+        purpose: '天气查询服务', dest: 'fixture', verify: '' });
+      await p.waitForFunction(() => document.getElementById('elev') && !document.getElementById('elev').hidden);
+      await p.waitForTimeout(400);
+      await sweep(p, 'secret-card', '#elev', { shotFirst: true });
+      const field = await p.locator('#elev input:not([hidden])').first().elementHandle();
+      await focusField(p, field);
+      await kbd(p, true, 72);
+      for (const id of ['elev-allow', 'elev-deny']) {
+        const action = await p.locator('#' + id).elementHandle();
+        await action.evaluate(node => node.scrollIntoView({block:'end',inline:'nearest'}));
+        await layoutFrames(p, 80);
+        const m = await measure(p, action);
+        const tapTarget = await action.evaluate(node => !node.disabled && node.offsetWidth >= 44 && node.offsetHeight >= 44);
+        const ok = m.inside && !m.cover.length && tapTarget;
+        rows.push({ ...m, case: 'secret-card', variant: name, field: id, ok, tapTarget });
+        console.log(`${ok ? 'PASS' : 'FAIL'} ${name} keyboard · ${id} rect ${m.rect} in ${m.view}`);
+      }
+      await kbd(p, false);
+      await p.evaluate(() => import('./js/elevate.js').then(m => m.clear()));
+    }
   },
   // a question card with the free-text answer (the approval / question sheet)
   'question-free-text': async (p) => {

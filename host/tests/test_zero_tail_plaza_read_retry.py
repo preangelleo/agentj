@@ -54,7 +54,7 @@ class ReadRetry(unittest.TestCase):
                 self.assertEqual(call.call_count, 1); sleep.assert_not_called()
         with mock.patch.object(cloud, 'plaza_pkg_call', return_value=(503, {'error': 'fixed'})) as call, mock.patch.object(market.time, 'sleep') as sleep:
             with self.assertRaises(market.PlazaError):
-                market._publish_call(self.st, {'nonce': 'synthetic'}, {}, None, None)
+                market._publish_call(self.st, {'nonce': 'synthetic'}, {}, None, None, files={})
             self.assertEqual(call.call_count, 1); sleep.assert_not_called()
 
     def test_each_attempt_reenters_existing_signed_transport(self):

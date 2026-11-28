@@ -26,6 +26,17 @@ class SkillShadow(unittest.TestCase):
         inventory=json.loads(p.SKILLS.with_name('bundled_skills.json').read_text())['logic_files']
         for name in expected:
             self.assertEqual(inventory[name],sorted(str(x.relative_to(p.SKILLS/name)) for x in (p.SKILLS/name).rglob('*') if x.is_file() and x.suffix in sl.LOGIC_SUFFIXES))
+    def test_skill_history_releases_remain_auditable_in_source(self):
+        root = p.SKILLS.parent.parent
+        runtime = json.loads((root / 'agentj/skill_history.json').read_text())
+        provenance = json.loads((root / 'skill-history-provenance.json').read_text())
+        self.assertEqual(sl.history(), runtime['skills'])
+        self.assertNotIn('releases', runtime)
+        self.assertEqual(provenance['source'], runtime['source'])
+        self.assertEqual(provenance['schema'], runtime['schema'])
+        for versions in runtime['skills'].values():
+            self.assertTrue(set(versions.values()) <= provenance['releases'].keys())
+
     def test_ego_lite_installs_regular_files_and_preserves_modified_copy(self):
         name = "agentj-ego-lite"
         source = p.SKILLS / name / "SKILL.md"

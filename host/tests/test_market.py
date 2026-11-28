@@ -6,6 +6,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import stat
 import sys
 import tomllib
@@ -503,6 +504,81 @@ class Publish(Base):
         self.srv.answers["pkg_publish"] = (409, {"error": "name_taken"})
         with self.assertRaisesRegex(plaza.PlazaError, "name"):
             self.pub(owner_confirmed=True, digest=d)
+
+    def test_publish_preview_applies_dashboard_bundle_contract(self):
+        cases = [
+            ("empty-verify", {"install": {"skill_dir_name": "demo-skill", "verify": ""}}, {}, "install.verify"),
+            ("category", {"category": "unknown"}, {}, "category"),
+            ("missing-readme", {}, {"README.md": None}, "README.md"),
+            ("blank-readme", {}, {"README.md": "  \t\n"}, "README.md"),
+            ("binary-readme", {}, {"README.md": b"\xff\x00"}, "README.md"),
+            ("oversize-readme", {}, {"README.md": "r" * 40_001}, "README.md"),
+            ("post-install", {"install": {"skill_dir_name": "demo-skill", "post_install": [""]}}, {}, "install.post_install"),
+            ("requires-os", {"requires": {"os": ["x" * 33]}}, {}, "requires.os"),
+            ("empty-clean-title", {"title_en": " \u200c "}, {}, "title_en"),
+            ("reserved-directory", {"install": {"skill_dir_name": "agentj-official"}}, {}, "install.skill_dir_name"),
+        ]
+        for name, overrides, changes, path in cases:
+            with self.subTest(name=name):
+                files = dict(fx.SKILL_FILES)
+                for filename, data in changes.items():
+                    if data is None:
+                        del files[filename]
+                    else:
+                        files[filename] = data
+                self.pkg = fx.make_skill(self.e.root / name, name=name, files=files, **overrides)
+                with self.assertRaisesRegex(plaza.PlazaError, f"path: {re.escape(path)}"):
+                    self.pub()
+        self.assertEqual(self.srv.calls, [])
+        self.assertEqual(self.srv.puts, [])
+        for name, install in [("absent", {}), ("explicit-null", {"verify": None})]:
+            self.pkg = fx.make_skill(self.e.root / name, name=name, install={"skill_dir_name": name, **install})
+            rc, output = self.pub()
+            self.assertEqual(rc, market.EXIT_OK, output)
+            self.assertIn("NOT SENT", output)
+            self.assertTrue(digest_of(output))
+        self.assertEqual(self.srv.calls, [])
+        self.assertEqual(self.srv.puts, [])
+
+    def test_publish_refusals_show_only_recognized_server_reason_and_path(self):
+        _, draft = self.pub()
+        confirmed = {"owner_confirmed": True, "digest": digest_of(draft)}
+        refusal = {"error": "bad_bundle", "reason": "install.verify", "path": "install.verify"}
+        expected = r"HTTP 422.*reason: install\.verify; path: install\.verify"
+        self.srv.put_answer = (422, refusal)
+        with self.assertRaisesRegex(plaza.PlazaError, "upload refused:.*" + expected):
+            self.pub(**confirmed)
+        self.srv.answers["pkg_publish"] = (422, refusal)
+        with self.assertRaisesRegex(plaza.PlazaError, "publish refused:.*" + expected):
+            self.pub(**confirmed)
+
+        legacy = (400, {"error": "bad_request"}), (422, refusal)
+        self.srv.answers.clear()
+        with mock.patch.object(cloud, "plaza_pkg_call", side_effect=legacy) as signed_route:
+            with self.assertRaisesRegex(plaza.PlazaError, "publish refused:.*" + expected):
+                self.pub(**confirmed)
+            signed = signed_route.call_args_list[0].args[2]
+            unsigned = signed_route.call_args_list[1].args[2]
+            self.assertIn("host_sig", signed)
+            self.assertNotIn("host_sig", unsigned)
+            self.assertNotEqual(signed["nonce"], unsigned["nonce"])
+
+        modern = (400, {**refusal, "error": "bad_request"})
+        with mock.patch.object(cloud, "plaza_pkg_call", return_value=modern) as signed_route:
+            with self.assertRaisesRegex(plaza.PlazaError, r"HTTP 400.*reason: install\.verify; path: install\.verify"):
+                self.pub(**confirmed)
+            self.assertEqual(signed_route.call_count, 1)
+
+        self.srv.put_answer = (422, {"error": "bad_bundle", "reason": "hidden_characters", "path": "README.md"})
+        with self.assertRaisesRegex(plaza.PlazaError, r"HTTP 422.*reason: hidden_characters; path: README\.md"):
+            self.pub(**confirmed)
+
+        opaque = "private" + "-may-not-be-echoed"
+        self.srv.put_answer = (422, {"error": opaque, "reason": opaque + "\n", "path": {"url": opaque}})
+        with self.assertRaises(plaza.PlazaError) as caught:
+            self.pub(**confirmed)
+        self.assertIn("HTTP 422", str(caught.exception))
+        self.assertNotIn(opaque, str(caught.exception))
 
     def test_junk_refused(self):
         (self.pkg / "__pycache__").mkdir()

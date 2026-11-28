@@ -2561,7 +2561,7 @@ def package_scan(text: str, host: str | None, user: str | None) -> collections.C
     return hits
 
 
-def layer1(manifest: dict, files: dict, identity) -> list[tuple[str, str, int]]:
+def layer1(manifest: dict, files: dict, identity, *, cleaned_manifest=None) -> list[tuple[str, str, int]]:
     """Every UTF-8 file, every path and every manifest string through privacy layer 1. → [(where, kind, n)] (empty = clean)."""
     host, user = identity if identity is not None else privacy.local_identity()
     from . import peer_guard
@@ -2572,12 +2572,15 @@ def layer1(manifest: dict, files: dict, identity) -> list[tuple[str, str, int]]:
             hits['secret_fragment'] += 1
         return hits
     found = []
-    for where, text in [("file names", "\n".join(sorted(files)))] + list(_manifest_strings(manifest)):
+    fields = list(_manifest_strings(manifest))
+    if cleaned_manifest is not None:
+        fields = list(dict.fromkeys([*fields, *_manifest_strings(cleaned_manifest)]))
+    for where, text in [("file names", "\n".join(sorted(files))), *fields]:
         hits = scan(text)
         found += [(where, k, n) for k, n in sorted(hits.items())]
     for p in sorted(files, key=lambda x: x.encode()):
         try:
-            text = files[p].decode("utf-8")
+            text = files[p].decode("utf-8-sig")
         except UnicodeDecodeError:
             continue
         hits = scan(text)
@@ -2599,22 +2602,49 @@ def layer2_draft(m: dict, files: dict) -> tuple[dict, str]:
     return draft, ", ".join(said)
 
 
-def _publish_call(st, fields: dict, signed: dict, post, out) -> tuple[dict, dict | None]:
-    """POST publish with the host's own signature (P426 #47). A server from before #47 refuses the unknown fields with
-    400 bad_request: then once more without them, said out loud — the package is then unsigned, which every verifier sees
-    (the operator's auto-certify leaves it to a human; installers show 「未签名」)."""
+_PUBLISH_ERROR_CODES = {
+    "bad_name", "bad_type", "bad_version", "bad_sha256", "bad_bytes", "bad_bundle", "not_uploading",
+    "unsupported_media_type", "package_removed", "type_mismatch", "conflict", "replay",
+}
+_PUBLISH_SCAN_KINDS = {
+    "private_key", "jwt", "aws_key", "aws_access_key", "github_token", "gitlab_token", "slack_token", "stripe_key",
+    "google_api_key", "anthropic_key", "openrouter_key", "openai_key", "replicate_token", "huggingface_token",
+    "telegram_bot_token", "agentjarvis_credential", "bearer_token", "url_credentials", "credential_assignment",
+    "phone_number", "email_address", "high_entropy_string",
+}
+
+
+def _publish_refusal(status: int, answer: dict, files: dict, *, upload=False) -> PlazaError:
+    code = cloud.parse_error(answer)
+    label = ERRORS.get(code) or (code if code in _PUBLISH_ERROR_CODES else f"http_{status}")
+    prefix = "上传被拒 / upload refused: " if upload else "发布被拒 / publish refused: "
+    path = bundle.publish_response_path(answer.get("path"), files)
+    if code == "audit_blocked":
+        rule, line = answer.get("rule"), answer.get("line")
+        if path and isinstance(rule, str) and plaza_audit.rule_text(rule) and type(line) is int and 1 <= line <= bundle.MAX_FILE + 1:
+            return PlazaError(f"{label} — {path} line {line}: {rule} (HTTP {status})")
+    if code == "secret_found":
+        kind = answer.get("kind")
+        if path and isinstance(kind, str) and kind in _PUBLISH_SCAN_KINDS:
+            return PlazaError(f"{label} — {path}: {kind} (HTTP {status})")
+    return PlazaError(f"{prefix}{label} (HTTP {status}){bundle.publish_error_details(answer, files)}")
+
+
+def _publish_call(st, fields: dict, signed: dict, post, out, files: dict) -> tuple[dict, dict | None]:
+    """A pre-P426 server may reject the signature fields with 400 bad_request. Preserve the one unsigned fallback."""
+    opts = {"post": post} if post else {}
     try:
-        status, obj = cloud.plaza_pkg_call(st, "publish", {**fields, **signed}, **({"post": post} if post else {}))
+        status, obj = cloud.plaza_pkg_call(st, "publish", {**fields, **signed}, **opts)
+        if status == 400 and cloud.parse_error(obj) == "bad_request" and not bundle.publish_error_details(obj, files):
+            print("注意 / note: 服务器还不支持发布方签名，这次不带签名发布 / the server does not take publisher signatures yet: "
+                  "publishing unsigned", file=out)
+            signed = None
+            status, obj = cloud.plaza_pkg_call(st, "publish", {**fields, "nonce": _nonce()}, **opts)
     except cloud.CloudError as e:
         raise PlazaError(ERRORS.get(e.kind) or f"连不上 Agent J 服务器 / cannot reach the Agent J server ({e.kind})")
-    if status == 400 and cloud.parse_error(obj) == "bad_request":
-        print("注意 / note: 服务器还不支持发布方签名，这次不带签名发布 / the server does not take publisher signatures yet: "
-              "publishing unsigned", file=out)
-        return _call(st, "publish", {**fields, "nonce": _nonce()}, post), None
     if 200 <= status < 300:
         return obj, signed
-    e = cloud.parse_error(obj) or f"http_{status}"
-    raise PlazaError(f"{ERRORS.get(e, e)} (HTTP {status})")
+    raise _publish_refusal(status, obj, files)
 
 
 def publish_digest(sha: str, show_name: bool) -> str:
@@ -2630,15 +2660,17 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
     if not cloud.read_cloud(st):
         raise PlazaError(ERRORS["unlinked"])
     try:
-        data, m = bundle.build(directory, {"certified": False, "author": "community"})
+        data, m = bundle.build(directory, {"certified": False, "author": "community"}, publishing=True)
         _, files = bundle.parse(data)
         perm_inferred = "permissions" not in m                 # P426 #181-1: no declaration → the inferred one is published
         if perm_inferred:
             data, m = bundle.build(directory, {"certified": False, "author": "community",
-                                               "permissions": plaza_perms.infer(m, files)})
+                                               "permissions": plaza_perms.infer(m, files)}, publishing=True)
+            _, files = bundle.parse(data)
+        signed_at = int(time.time())
+        cleaned_manifest = bundle.check_publish(m, files, clean_text=plaza.plaza_clean, signed_at=signed_at)
     except bundle.BundleError as e:
         raise PlazaError(f"包不合格，没发 / not a valid package, nothing sent: {e}")
-    _, files = bundle.parse(data)
     if m["type"] == "card":           # P432 上线关键点: only a card that passes every check goes out
         from . import jcards_pkg
         probs = jcards_pkg.preflight(files)
@@ -2651,7 +2683,7 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
         print(market_guard.refusal(findings, "什么都没发"), file=out)
         return EXIT_BLOCKED
     warns = market_guard.audit_lines(findings, False) if findings else []
-    hits = layer1(m, files, identity)
+    hits = layer1(m, files, identity, cleaned_manifest=cleaned_manifest)
     if hits:
         print("layer 1 找到了可能的隐私 / 密钥，什么都没发；请你的人改原文件后重来（agentj 绝不替你改代码）/ layer 1 found possible "
               "private data or secrets — nothing sent; fix the files and run again (agentj never rewrites them):", file=out)
@@ -2666,23 +2698,16 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
             return EXIT_DIGEST
         fields = {"nonce": _nonce(), "name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha,
                   "bytes": len(data), "show_name": bool(show_name)}
-        signed = plaza_trust.sign(st.signing_key(), m["name"], m["type"], m["version"], sha, int(time.time()))
-        obj, signed = _publish_call(st, fields, signed, post, out)
+        signed = plaza_trust.sign(st.signing_key(), m["name"], m["type"], m["version"], sha, signed_at)
+        obj, signed = _publish_call(st, fields, signed, post, out, files)
         up = obj.get("upload") if isinstance(obj.get("upload"), dict) else {}
         try:
             status, ans = cloud.plaza_upload(st, up.get("url"), data, **({"put": put} if put else {}))
         except cloud.CloudError as e:
             raise PlazaError("上传地址不是本机配置的 API，没传 / the upload URL is not on the configured API: not uploaded"
                              if e.kind == "refused_url" else f"上传失败 / upload failed ({e.kind})")
-        if status == 422 and cloud.parse_error(ans) == "audit_blocked":
-            raise PlazaError(f"{ERRORS['audit_blocked']} — {clean_line(str(ans.get('path', '')), 120)} line "
-                             f"{clean_line(str(ans.get('line', '')), 10)}: {clean_line(str(ans.get('rule', '')), 40)} (HTTP 422)")
-        if status == 422 and cloud.parse_error(ans) == "secret_found":
-            raise PlazaError(f"{ERRORS['secret_found']} — {clean_line(str(ans.get('path', '')), 120)}: "
-                             f"{clean_line(str(ans.get('kind', '')), 40)} (HTTP 422)")
         if not 200 <= status < 300:
-            e = cloud.parse_error(ans) or f"http_{status}"
-            raise PlazaError(f"上传被拒 / upload refused: {ERRORS.get(e, e)} (HTTP {status})")
+            raise _publish_refusal(status, ans, files, upload=True)
         st.log("plaza_pkg_publish", name=m["name"], result="ok")
         state = ans.get("state") if ans.get("state") in ("live", "uploading", "rejected") else "?"
         print(f"已公开发到广场 / published: {m['name']} {m['version']} · state {state}（社群 · 待审核 / community · pending review）", file=out)

@@ -158,6 +158,17 @@ export async function runP0303({ B, web, fake, out = OUT }) {
       await click('term-sh-yes');
       await waitFor(p, `${$('term-sheetwrap')}?.dataset.kind === 'login' && !${$('term-sheetwrap')}.hidden`, 10000);
       check(await evaluate(p, `${$('term')}.hidden && document.body.dataset.approvalSpecial === '1'`), 'the login card is the shared popup over the chat (as the real host sends it) ' + tag);
+      const layout = await evaluate(p, `(() => {
+        const wrap = ${$('term-sheetwrap')}, panel = ${$('term-sheet')};
+        const card = panel.getBoundingClientRect(), quota = ${$('m5h')}.getBoundingClientRect();
+        const style = getComputedStyle(panel), water = getComputedStyle(${$('water')}).backgroundColor;
+        return { system: wrap.dataset.popupSystem, fill: style.backgroundColor, water, ink: style.color,
+          full: Math.abs(card.width - innerWidth) <= 1 && Math.abs(card.left) <= 1,
+          atQuota: Math.abs(card.bottom - Math.min(quota.top, visualViewport.offsetTop + visualViewport.height)) <= 2 };
+      })()`);
+      check(layout.ink === 'rgb(250, 249, 245)' && (narrow
+        ? layout.system === 'grow' && layout.full && layout.atQuota && layout.fill === layout.water
+        : layout.system === 'center' && layout.fill === 'rgb(44, 43, 38)'), 'terminal login uses the responsive A/B shell ' + tag + JSON.stringify(layout));
       await sleep(400);   // envelope verified
       await evaluate(p, `${$('term-sh-pw')}.focus()`); await p.send('Input.insertText', { text: PASSWORD });
       await save('1-login');

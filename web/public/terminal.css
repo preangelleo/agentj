@@ -2,8 +2,8 @@
    Noir chrome in both themes; the PTY canvas follows light/dark appearance; closed palette only (leo-palette.json): noir #2c2b26,
    sooty #141414, lotion #faf9f5, black-mana #858585, strawberry-field #f7827e (the recording dot), banana-republic #ffe292
    (warnings), milky-waves #71bbde (the owner's own lines, focus). Every tap target ≥ 44 px; no scrollbar drawn. */
-.term{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:47;display:flex;flex-direction:column;
-  box-sizing:border-box;padding-top:env(safe-area-inset-top);background:#2c2b26;color:#faf9f5;font-family:var(--font-body);color-scheme:dark}
+.term{--term-page-bg:var(--noir);position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:47;display:flex;flex-direction:column;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top);background:var(--term-page-bg);color:#faf9f5;font-family:var(--font-body);color-scheme:dark}
 .term[hidden]{display:none}
 .term *{box-sizing:border-box}
 .term-top{flex:none;position:relative;display:flex;align-items:center;gap:8px;padding:30px 10px 6px 14px}
@@ -21,8 +21,8 @@
 /* P576b/c: a narrow window keeps the whole title — the time goes under 「操作日志记录中」 and the log text may wrap to two lines */
 @media (max-width:560px){.term-title{flex:none;overflow:visible}.term-log{flex:1 1 0;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}
   .term-rec{align-items:flex-start;line-height:1.25}.term-rec::before{flex:none;margin-top:3px}.term-left{padding-left:15px}.term-left::before{content:none}}
-.term-end{flex:none;min-height:44px;min-width:56px;padding:0 14px;border-radius:999px;border:1.5px solid #f7827e;background:transparent;
-  color:#faf9f5;font:600 .9375rem/1 var(--font-body);cursor:pointer}
+.term-end{flex:none;min-height:44px;min-width:56px;padding:0 14px;border-radius:999px;border:0;background:var(--peachy-feeling);
+  color:var(--noir);font:600 .9375rem/1 var(--font-body);cursor:pointer}
 .term-outbox{flex:1;min-height:0;display:flex;flex-direction:column;background:#2c2b26}
 .term-out{flex:1;min-height:0;margin:0;padding:12px 16px;overflow:auto;background:#2c2b26;color:#faf9f5;font:400 14px/1.5 var(--font-mono);
   white-space:pre-wrap;overflow-wrap:anywhere;scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -49,26 +49,32 @@
 .term-sheetwrap{position:absolute;inset:0;z-index:2;display:flex;align-items:flex-end;justify-content:center;background:rgba(20,20,20,.72)}
 .term-sheetwrap[hidden]{display:none}
 .term-sheet{width:min(560px,100%);max-height:100%;overflow:auto;scrollbar-width:none;display:flex;flex-direction:column;gap:12px;
-  padding:22px 20px calc(20px + env(safe-area-inset-bottom));background:#2c2b26;border:1px solid rgba(250,249,245,.2);border-bottom:0;
+  box-sizing:border-box;padding:22px 20px calc(20px + env(safe-area-inset-bottom));background:var(--noir);color:var(--lotion);border:1px solid rgba(250,249,245,.2);border-bottom:0;
   border-radius:20px 20px 0 0}
 .term-sheet::-webkit-scrollbar{display:none}
 @media (min-width:700px){.term-sheetwrap{align-items:center}.term-sheet{border-radius:20px;border-bottom:1px solid rgba(250,249,245,.2)}}
+@media (width < 700px){
+  /* The terminal’s page has no visible quota line. Its local sheet joins the page at the visual viewport edge. */
+  .term>.term-sheetwrap{background:transparent}
+  .term>.term-sheetwrap>.term-sheet{width:100%;background:var(--term-page-bg);border:0}
+}
 .term-sheet>*{margin:0}
 .term-sheet [hidden]{display:none}
 .term-sheet h2{font:600 1.1875rem/1.35 var(--font-title)}
 .term-sheet p{line-height:1.6}
-.term-origin{font-size:.8125rem;line-height:1.5;color:rgba(250,249,245,.82);padding:6px 10px;border-left:3px solid #71bbde;background:rgba(113,187,222,.12);border-radius:4px}
-.term-sh-pre2l{font-size:.8125rem;color:rgba(250,249,245,.82)}
+.term-origin{font-size:.8125rem;line-height:1.5;color:var(--lotion);padding:6px 10px;border-left:3px solid #71bbde;background:rgba(113,187,222,.12);border-radius:4px}
+.term-sh-pre2l{font-size:.8125rem;color:var(--lotion)}
 .term-sheet .cc--block>pre{margin:0}
 .term-sheet pre{padding:10px 52px 10px 12px;border-radius:10px;background:#141414;font:400 14px/1.5 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;
   max-height:30vh;overflow:auto;scrollbar-width:none}
-.term-sheet .term-warn{color:#ffe292;font-weight:600;font-size:.9375rem;padding:8px 10px;border-left:3px solid #f7827e;background:rgba(247,130,126,.12);border-radius:4px}
+.term-sheet .term-warn,.term-sheet .term-hint{color:var(--lotion);font-weight:600;font-size:.9375rem;padding:8px 10px;border-left:3px solid var(--peachy-feeling);border-radius:4px}
 .term-pwlab{font-weight:600}
-.term-sh-note{font-size:.8125rem;color:rgba(250,249,245,.78)}
+.term-sh-note{font-size:.8125rem;color:var(--lotion)}
 .term-acts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:12px;margin-top:4px}
-.term-btn{min-height:44px;padding:0 22px;border-radius:999px;border:1px solid rgba(250,249,245,.45);background:transparent;color:#faf9f5;
+.term-btn{min-height:44px;padding:0 22px;border-radius:999px;border:0;background:var(--lotion);color:var(--noir);
   font:600 .9375rem/1 var(--font-body);cursor:pointer}
-.term-btn--yes{background:#faf9f5;border-color:#faf9f5;color:#141414}
+.term-sheet .cc-btn{background:var(--lotion);color:var(--noir);border:0}
+.term-sheet .pkassist__btn{background:var(--lotion);color:var(--noir);border:0}
 .term-stacts{justify-content:flex-start}
 
 /* ---- P414 (#179③, PROTOCOL §37.14): full screen like P412's editor — Noir ground, Lotion words, no header / footer rules
@@ -110,9 +116,9 @@
   color:#faf9f5;font:600 .875rem/1 var(--font-body);cursor:pointer}
 .termchip-open{background:#faf9f5;color:#141414;border-color:#faf9f5}
 .termchip-btn:focus-visible{outline:2px solid #71bbde;outline-offset:2px}
-/* P539: the terminal sheet's own passkey line (pkassist.js) — the sheet is always dark */
-.term-sheet .pkassist{margin:0;color:rgba(250,249,245,.78)}
-.term-sheet .pkassist[data-state="fail"] .pkassist__text{color:#ffe292}
+/* P539: the terminal sheet uses the existing passkey help and retry controls. */
+.term-sheet .pkassist{margin:0;color:var(--lotion)}
+.term-sheet .pkassist[data-state="fail"] .pkassist__text{border-inline-start:3px solid var(--peachy-feeling);padding-inline-start:var(--sp-2)}
 
 /* ---- 0.26.9 #463 (ADR-0269-w-term): the full terminal (js/termpty.js, xterm.js). The xterm grid fills the output area with its current
    light/dark canvas; its own scrollbar is drawn transparent (the page shows none, wheel / finger still scroll). The extra-keys bar

@@ -22,7 +22,7 @@ const ENGINES = (process.env.P569_ENGINES || 'chromium,webkit').split(',');
 const LANGS = ['zh', 'en'];
 const VIEWS = [[390, 844, 'light'], [390, 844, 'dark'], [1440, 900, 'light']];
 
-// the old bar colours, measured on the base tree (fdeac15eb) — same in both engines, both languages, every width
+// Baseline bar colours from fdeac15eb, with the 0.30.82 terminal warning changed to Peachy.
 const EXPECT = {
   light: {
     'words-quote': 'rgb(217, 119, 87)',
@@ -46,7 +46,7 @@ const EXPECT = {
     'jc-mark': 'rgb(217, 119, 87)',
     'ct-fresh': 'rgb(98, 152, 135)',
     'term-origin': 'rgb(113, 187, 222)',
-    'term-warn': 'rgb(247, 130, 126)',
+    'term-warn': 'rgb(217, 119, 87)',
     'sug-selected': 'rgb(113, 187, 222)',
     'rsmode': 'rgb(247, 130, 126)',
     'dashd-msg': 'rgb(98, 152, 135)',
@@ -84,7 +84,7 @@ const EXPECT = {
     'jc-mark': 'rgb(217, 119, 87)',
     'ct-fresh': 'rgb(98, 152, 135)',
     'term-origin': 'rgb(113, 187, 222)',
-    'term-warn': 'rgb(247, 130, 126)',
+    'term-warn': 'rgb(217, 119, 87)',
     'sug-selected': 'rgb(113, 187, 222)',
     'rsmode': 'rgb(247, 130, 126)',
     'dashd-msg': 'rgb(98, 152, 135)',

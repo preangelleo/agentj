@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // 0308 hotfix (chairman 11-11): Settings is a PAGE that follows the whole screen (as in 0.30.6), not a fixed centred panel.
-// Only the interactions Settings starts (secret / auth-code / QR / confirm cards) are centred popups.
+// 0.30.82: Settings keeps its full-screen page. Its secret approval grows from that page's bottom edge.
 // Size regression: at 1440 × 900 the Settings page is ≥ 90 % of the viewport wide (and at 390 too); every sub-page —
 // in-Settings (遥控器管理, 邮件 …) and the pages Settings hands off to (模型和 API Key, 记忆 …) — is the same full-screen size.
-// Plus one settings-initiated secret card (Settings → 邮件 → 「设置邮箱授权码」): visible, centred, Settings still full behind it.
+// Plus one settings-initiated secret card (Settings → 邮件 → 「设置邮箱授权码」): visible, full-width, Settings still full behind it.
 // zh + en × light + dark × 390 × 844 and 1440 × 900. Local fake host + formal built client; no pairing, no external requests.
 // Shots → $AJ_P0308_OUT (default <repo>/.jarvis/out/p0308-settings-fullscreen/). AJ_P0308_SIZE_ONLY=1 skips screenshots.
 import assert from 'node:assert/strict';
@@ -122,7 +122,7 @@ try {
         await key(p, 'Escape'); await sleep(150);   // a page with an inner layer: second Esc
       }
       index.push([`${tag}-sizes`, J(sizes)]);
-      // ---- requirement 2 kept: a settings-initiated secret card is a centred popup over the full Settings page ----
+      // A settings-initiated secret card shares the full Settings page's bottom and canvas.
       await openSettings(p);
       await evaluate(p, `document.getElementById('set-mail-nav').click();true`);
       await waitFor(p, `!!document.getElementById('mail-key') && !document.getElementById('mail-key').disabled`, 10000);
@@ -130,14 +130,16 @@ try {
       await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`, 15000);
       await sleep(400);
       const c = await evaluate(p, `(()=>{const e=document.getElementById('elev'),b=(e.querySelector('.box,.sheet,.card')||e).getBoundingClientRect(),
-        s=document.querySelector('#settings>.setbox').getBoundingClientRect();
+        settings=document.getElementById('settings'),s=settings.querySelector('.setbox').getBoundingClientRect(),panel=getComputedStyle(e.querySelector('.box'));
         return {sys:e.dataset.popupSystem||'',ctx:e.dataset.popupContext||'',x:b.x,y:b.y,w:b.width,h:b.height,vw:innerWidth,vh:innerHeight,setW:s.width,
-          setOpen:!document.getElementById('settings').hidden}})()`);
+          bottom:b.bottom,setBottom:settings.getBoundingClientRect().bottom,bg:panel.backgroundColor,
+          setBg:getComputedStyle(settings).backgroundColor,ink:panel.color,setOpen:!settings.hidden}})()`);
       check(c.setOpen && c.setW >= 0.9 * c.vw, `${tag}: Settings stays full behind the secret card ${J(c)}`);
-      check(c.ctx === 'settings' && c.sys === 'center', `${tag}: secret card is the centred popup system in Settings, not grown from the quota line ${J(c)}`);
-      check(Math.abs(c.x + c.w / 2 - c.vw / 2) < 3, `${tag}: secret card horizontally centred ${J(c)}`);
-      check(Math.abs(c.y + c.h / 2 - c.vh / 2) < 3 || (c.y >= 0 && c.y + c.h <= c.vh + 1 && c.h > 0.85 * c.vh), `${tag}: secret card vertically centred (or fills a short screen) ${J(c)}`);
-      await save(p, `${tag}-30-secret-card`, 'Settings → 邮件 → 设置邮箱授权码: centred secret card over the full-screen Settings');
+      check(c.ctx === 'settings' && c.sys === 'grow', `${tag}: secret card uses Settings' growth sheet ${J(c)}`);
+      check(Math.abs(c.w - c.vw) < 2 && Math.abs(c.x) < 2, `${tag}: secret card is full viewport width ${J(c)}`);
+      check(c.y >= 0 && Math.abs(c.bottom - c.setBottom) < 2, `${tag}: secret card stays inside Settings and touches its bottom edge ${J(c)}`);
+      check(c.bg === c.setBg && c.ink === 'rgb(250, 249, 245)', `${tag}: secret card shares Settings' canvas and uses Lotion lettering`);
+      await save(p, `${tag}-30-secret-card`, 'Settings → 邮件 → 设置邮箱授权码: growth sheet on the full-screen Settings');
       check(p.offsite.length === 0, `${tag}: local-only requests`);
       console.log('ok', tag);
     } finally { await p.dispose(); }

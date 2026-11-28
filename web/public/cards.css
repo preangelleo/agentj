@@ -171,12 +171,12 @@
   grid-template-rows:auto auto minmax(calc(var(--ui-tap) + var(--ui-space-content) + var(--ui-space-control)),1fr) auto auto;
   column-gap:clamp(var(--sp-2),2.6vw,var(--ui-space-btn));
   padding:clamp(var(--ui-space-content),4.5vw,var(--ui-space-section));
-  background:var(--c-argent);
-  color:var(--c-sooty);
+  background:var(--c-noir);
+  color:var(--c-lotion);
   border-color:transparent;
   color-scheme:dark;
-  --aj-dialog-action-background:var(--c-noir);
-  --aj-dialog-action-color:var(--c-lotion);
+  --aj-dialog-action-background:var(--c-lotion);
+  --aj-dialog-action-color:var(--c-noir);
   --aj-dialog-action-border:0;
   --aj-dialog-action-disabled-opacity:.7;
   --aj-dialog-action-primary-background:var(--c-lotion);
@@ -188,6 +188,7 @@
 .jc-dialog[data-note-sheet]>h2{grid-row:1;margin:0 0 var(--ui-space-content)}
 .jc-dialog[data-note-sheet]>input[type="text"]{grid-row:2;margin:0 0 var(--ui-space-control)}
 .jc-dialog[data-note-sheet]>textarea{grid-row:3;min-height:0;margin:0 0 var(--ui-space-content)}
+.jc-dialog[data-note-sheet]>:is(input,textarea)::placeholder{color:var(--c-lotion)}
 .jc-dialog[data-note-sheet]>:is(input[type="text"],textarea){font-size:max(16px,1em)}
 .jc-dialog[data-note-sheet]>.aj-dialog-action{
   grid-row:4;
@@ -200,7 +201,7 @@
 }
 .jc-dialog[data-note-sheet]>.jc-note-cancel{grid-column:4}
 .jc-dialog[data-note-sheet]>.aj-dialog-action--primary{grid-column:5;font-weight:600}
-.jc-dialog[data-note-sheet]>.aj-save-key{grid-row:5;justify-self:end;margin:var(--ui-space-control) 0 0;color:var(--c-sooty)}
+.jc-dialog[data-note-sheet]>.aj-save-key{grid-row:5;justify-self:end;margin:var(--ui-space-control) 0 0;color:var(--c-lotion)}
 
 /* Keep the keyboard-free editor in the visual viewport instead of the chat stage. */
 body:not([data-kb="1"]) .jc-dialog[data-note-sheet]{
@@ -223,16 +224,22 @@ body:not([data-kb="1"]) .jc-dialog[data-note-sheet]{
 }
 body:not([data-kb="1"]) .jc-dialog[data-note-sheet]>textarea{--aj-wallet-native-textarea-max-height:none}
 @media(max-width:600px){
-  /* Dock to the visible phone edge and keep controls inside the safe area. */
+  /* The no-keyboard editor grows from the quota line; the keyboard layout below uses its visible edge. */
+  .jc-dialog[data-note-sheet][open]{
+    background:var(--water-color);
+    --aj-dialog-action-background:var(--c-noir);--aj-dialog-action-color:var(--c-lotion);
+    --aj-dialog-action-border:1px solid var(--c-lotion);
+  }
+  .jc-dialog[data-note-sheet]:modal::backdrop{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
   body:not([data-kb="1"]) .jc-dialog[data-note-sheet]{
     --note-gutter:clamp(var(--ui-space-content),4.5vw,var(--ui-space-section));
-    inset-block:auto var(--note-view-bottom);
+    inset-block:auto calc(var(--note-view-bottom) + var(--water-floor,0px));
     width:100%;
-    max-height:calc(var(--note-view-top) + var(--note-view-height) - var(--note-safe-top) - var(--sp-2));
+    max-height:calc(var(--note-view-top) + var(--note-view-height) - var(--note-safe-top) - var(--water-floor,0px) - var(--sp-2));
     margin:0;
     padding-left:max(var(--note-gutter),env(safe-area-inset-left,0px));
     padding-right:max(var(--note-gutter),env(safe-area-inset-right,0px));
-    padding-bottom:calc(var(--note-gutter) + var(--note-safe-bottom));
+    padding-bottom:var(--note-gutter);
     border-radius:28px 28px 0 0;
   }
 }

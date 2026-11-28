@@ -48,13 +48,13 @@ try{
    await waitFor(p,`document.body.dataset.sheet==='1'&&document.getElementById('sheet').dataset.approvalV==='2'`);
    check(row.frames.some(f=>f.t==='auth_start'&&f.kind==='codex'&&f.route==='device'&&f.has_account),'real account button sent auth_start');
    check(row.frames.some(f=>f.t==='ask'&&f.tool==='AuthRescue'&&f.passkey_required),'candidate Host emitted listed UV request');
-   const geometry=await evaluate(p,`(()=>{const n=document.getElementById('sheet'),r=n.getBoundingClientRect(),s=getComputedStyle(n);return{system:n.dataset.popupSystem,bg:s.backgroundColor,ink:s.color,center:r.y+r.height/2,centerX:r.x+r.width/2,left:r.left,right:r.right,width:r.width,top:r.top,bottom:r.bottom,visible:!!n.getClientRects().length,settings:!document.getElementById('settings').hidden}})()`);
+   const geometry=await evaluate(p,`(()=>{const n=document.getElementById('sheet'),r=n.getBoundingClientRect(),s=getComputedStyle(n),p=document.getElementById('settings');return{system:n.dataset.popupSystem,bg:s.backgroundColor,ink:s.color,left:r.left,right:r.right,width:r.width,top:r.top,bottom:r.bottom,visible:!!n.getClientRects().length,settings:!p.hidden,settingsBg:getComputedStyle(p).backgroundColor,settingsBottom:p.getBoundingClientRect().bottom}})()`);
    row.geometry=geometry;await sleep(100);writeFileSync(`${out}/${width}-${theme}-${scenario}-card.png`,await shoot(p));
    check(geometry.settings&&geometry.visible,'login approval stays above original Settings page');
-   check(geometry.system==='center'&&Math.abs(geometry.center-450)<2,'Settings login approval uses viewport-centered B dialog');
-   check(geometry.bg==='rgb(44, 43, 38)'&&geometry.ink==='rgb(250, 249, 245)','Settings login approval uses Noir and Lotion');
-   check(geometry.width<=480&&geometry.top>=16&&geometry.bottom<=884,'Settings login approval preserves B width and viewport edges');
-   check(Math.abs(geometry.centerX-width/2)<2&&geometry.left>=16&&geometry.right<=width-16,'Settings login approval is horizontally centered without clipping');
+   check(geometry.system==='grow'&&Math.abs(geometry.bottom-geometry.settingsBottom)<2,'Settings login approval grows from the bottom of Settings');
+   check(geometry.bg===geometry.settingsBg&&geometry.ink==='rgb(250, 249, 245)','Settings login approval shares the Settings canvas and uses Lotion');
+   check(Math.abs(geometry.width-width)<2&&Math.abs(geometry.left)<2&&Math.abs(geometry.right-width)<2,'Settings login approval is full-width');
+   check(geometry.top>=0&&geometry.bottom<=900+1,'Settings login approval stays in the visible viewport');
    if(scenario==='no-key'){
     check(await evaluate(p,`!document.getElementById('apprGo').hidden&&document.getElementById('apprGo').textContent.includes('在本机设置 Touch ID')`),'no-key listed card offers explicit local Touch ID setup');
     check(await evaluate(p,`document.getElementById('apprAllow').hidden&&window.__getCount===0`),'no-key does not start a misleading browser credential ceremony');

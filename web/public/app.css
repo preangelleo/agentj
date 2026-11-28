@@ -909,17 +909,16 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 .ptt .pttseg{white-space:pre-line}   /* 0.26.9 #442: the segment line, then the text-or-attachment rule on its own line */
 .ptt.lock b::after{content:attr(data-lock);font:600 calc(11px*var(--fz))/1 var(--font-body);padding:3px 7px;border-radius:7px;
   background:var(--peachy-feeling);color:var(--lotion);letter-spacing:0}
-.ptt.cancel .pttc{--ring:var(--c-danger);background:#3a1712}
 .ptt.cancel .pttmic{display:none}
-.ptt.cancel .pttx{display:block}
-.ptt.cancel .pttring:not(.r2){animation:none;transform:none;opacity:.35}
+.ptt.cancel .pttx{display:block;color:var(--noir)}
+.ptt.cancel .pttring:not(.r2){animation:none;transform:none;opacity:1}
 .ptt.cancel .pttring.r2{animation:none;opacity:0}
 .pttact{display:flex;gap:22px;pointer-events:auto}
 .pttact[hidden]{display:none}
 .pttbtn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:0;cursor:pointer;
-  background:rgba(44,43,38,.82);color:#faf9f5;padding:0;-webkit-tap-highlight-color:transparent}
+  background:var(--noir);color:var(--lotion);padding:0;-webkit-tap-highlight-color:transparent}
 .pttbtn svg{width:24px;height:24px}
-.pttbtn.go{background:var(--peachy-feeling);color:var(--lotion)}
+.pttbtn.go{background:var(--lotion);color:var(--noir)}
 .pttbtn.go svg{transform:translate(-1px,1px)}
 /* P346 (#54): three icons (cancel · end · send); a narrow folded screen (280px) only tightens the gap */
 @media(max-width:330px){.pttact{gap:18px}}
@@ -1527,15 +1526,15 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
   background:rgba(20,20,20,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 .cam[hidden]{display:none}
 .cam .box{display:flex;flex-direction:column;gap:14px;align-items:center;width:min(720px,100%);
-  padding:18px;border-radius:24px;background:var(--pg);box-shadow:0 18px 48px rgba(20,20,20,.35)}
+  padding:18px;border-radius:24px;background:var(--noir);color:var(--lotion);box-shadow:0 18px 48px rgba(20,20,20,.35)}
 .cam video,.cam canvas{display:block;width:100%;max-height:62vh;object-fit:contain;border-radius:14px;background:#000}
 .cam video[hidden],.cam canvas[hidden]{display:none}
-.cam .msg{font:500 calc(15px*var(--fz))/1.5 var(--font-body);color:var(--ink);text-align:center}
+.cam .msg{font:500 calc(15px*var(--fz))/1.5 var(--font-body);color:inherit;text-align:center}
+.cam[data-mode="error"] .msg{border-inline-start:3px solid var(--peachy-feeling);padding-inline-start:var(--sp-2)}
 .cam .msg:empty{display:none}
 .cam .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-.cam .row button{min-height:var(--rtap);padding:0 20px;border-radius:18px;background:var(--surface);color:var(--ink);
+.cam .row button{min-height:var(--rtap);padding:0 20px;border-radius:18px;border:0;background:var(--lotion);color:var(--noir);
   font:500 calc(16px*var(--fz))/1 var(--font-body)}
-.cam .row button.go{background:var(--lotion);color:var(--sooty)}
 .cam .row button[hidden]{display:none}
 
 /* ---- keyboard shortcuts: since P187 a full-screen menu page (menu.css .keydl) ---- */
@@ -1634,7 +1633,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .atag{display:inline-flex;align-items:center;padding:2px 10px;border-radius:var(--r-pill);font:600 calc(12px*var(--fz))/1.5 var(--font-body);
   background:var(--surface);color:var(--ink)}
 .atag.danger{background:var(--lotion);color:var(--c-danger)}
-.atag.danger.arconfirm{background:var(--sooty);color:var(--peachy-feeling)}
+.atag.danger.arconfirm{background:var(--sooty);color:var(--lotion);border-inline-start:3px solid var(--peachy-feeling)}
 .atag.danger::before{content:"!";margin-right:5px;font-weight:700}
 .atag.low{background:var(--surface)}
 .atag.task{background:var(--surface);font-weight:500}
@@ -4549,17 +4548,16 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]:not([hidden]){
   display:flex;align-items:flex-end;justify-content:stretch;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;
 }
-/* Grow cards use the quota color token. The iOS Home Screen body paints it separately from background-color. */
+/* Growth sheets share the visible page or waterline. The iOS Home Screen paints its water separately. */
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box){
-  width:100%;max-width:none;margin:0;border:0;border-radius:28px 28px 0 0;background:var(--water-color);color:var(--ink);box-shadow:none;outline:0;
+  width:100%;max-width:none;margin:0;border:0;border-radius:28px 28px 0 0;background:var(--popup-grow-background,var(--water-color));color:var(--ink);box-shadow:none;outline:0;
 }
-.lqr[data-popup-system="grow"]{--water-color:var(--rm-bg)}
 #sheet.aj-shared-popup[data-popup-system="grow"]{
   /* 0304 r2: the stage cap (menu.css #stage>.sheet) has no definite height here — a tall card (Same owner, details open)
      grew under the top bar at 390. Never taller than the stage between the top bar and the quota line; it scrolls inside. */
   max-height:var(--popup-height);
   top:auto;left:0;right:auto;bottom:calc(100dvh - var(--popup-top) - var(--popup-height));
-  width:100vw;max-width:100vw;transform:none;border-radius:28px 28px 0 0;background:var(--water-color);color:var(--ink);box-shadow:none;
+  width:100vw;max-width:100vw;transform:none;border-radius:28px 28px 0 0;background:var(--popup-grow-background,var(--water-color));color:var(--ink);box-shadow:none;
   /* 0.30.6 (#0304 QA): the grown sheet is position:fixed, so menu.css's `#stage>.sheet{max-height:calc(100% - …)}` resolved
      against the whole viewport while the bottom sits on the reading area's floor — a tall card (five friend actions) rose past
      the screen top and 收起 went under the header. Cap = from its bottom edge up to the sheet ceiling (fit.js --ui-sheet-ceil),
@@ -4622,8 +4620,6 @@ body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
    repainting under every Settings scroll on a phone). */
 body:has(#settings:not([hidden])) .water .wave{animation-play-state:paused}
 
-/* Settings uses the standard Noir B shell through every passkey setup step. */
-.ajmodal.pkp.aj-shared-popup[data-popup-context="settings"]>.box{outline:0}
 /* Keep the existing dlgcard size/radius; the viewport veil is sized separately. */
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-context="settings"][data-popup-system="center"]>:is(.sq,.box){border-radius:var(--dlg-radius);max-height:calc(var(--popup-height) - 32px)}
 #pkp.aj-shared-popup[data-popup-context="settings"] .pkp-code{margin-top:var(--sp-4)}
@@ -4641,9 +4637,6 @@ body:has(#settings:not([hidden])) .water .wave{animation-play-state:paused}
 .setup-detail-body{padding:0 0 var(--sp-3)}
 .setup-step{margin:var(--sp-3) 0 0;white-space:pre-wrap;font-weight:600}
 
-/* 0.30.0: login credential approval stays in the Settings B system. */
-#sheet.auth-approval.aj-shared-popup[data-popup-context="settings"][data-popup-system="center"]{background:var(--noir);color:var(--lotion);border-radius:var(--dlg-radius);max-height:calc(var(--popup-height) - 32px)}
-body[data-sheet="1"]:has(#sheet.auth-approval[data-popup-system="center"]) .scrim.auth-approval{background:var(--dlg-scrim);backdrop-filter:blur(var(--dlg-blur));-webkit-backdrop-filter:blur(var(--dlg-blur))}
 /* Only the Settings passkey self-test result: centred copy and the existing logo green. */
 #toast[data-pk-test="1"]{border:1.5px solid var(--emerald-oasis);text-align:center;align-items:center}
 #toast.square[data-pk-test="1"]{width:min(340px,calc(100vw - 40px));min-height:220px;padding:28px;pointer-events:auto}
@@ -4775,12 +4768,59 @@ body:has(:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"
 /* 0322 r4 U10: secret decisions stack at full width; sudo keeps its existing pair. */
 .elev.secret .elev-acts{grid-template-columns:minmax(0,1fr)}
 .elev.secret .elev-acts>.aj-action{white-space:nowrap;text-wrap:nowrap}
-#elev.secret.aj-shared-popup[data-popup-system="grow"]{height:auto;max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
-#elev.secret.aj-shared-popup[data-popup-system="grow"]>.box{max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
-/* Secret form: the header uses the theme's readable text and the underlying tools keep their layout slot. */
-#elev.secret[data-popup-system="grow"] .elev-kicker{color:var(--callout-fg)}
-#elev[data-multi-secret]{--bg:var(--noir);--text:var(--lotion);--text-muted:var(--lotion);--ink:var(--lotion);--surface:var(--sooty);--code-bg:var(--surface);--border:var(--black-mana);--accent:var(--lotion);color-scheme:dark}
-#elev.secret[data-multi-secret]>.box{background:var(--noir);color:var(--lotion)}
+/* Existing portrait growth cards use the same palette inside their component owners. */
+#elev.secret[data-popup-system="grow"]{
+  --ink:var(--lotion);--ink-soft:var(--lotion);--text:var(--lotion);--text-muted:var(--lotion);--accent:var(--lotion);
+  --aj-action-background:var(--noir);--aj-action-color:var(--lotion);
+  --aj-action-primary-background:var(--lotion);--aj-action-primary-color:var(--noir);
+  --aj-action-primary-border-color:var(--lotion);
+}
+#lqr[data-popup-system="grow"]{
+  --ink:var(--lotion);--ink-soft:var(--lotion);--text:var(--lotion);--text-muted:var(--lotion);--accent:var(--lotion);
+  --aj-action-background:var(--noir);--aj-action-color:var(--lotion);
+  --aj-action-primary-background:var(--lotion);--aj-action-primary-color:var(--noir);
+  --aj-action-primary-border-color:var(--lotion);
+}
+#pkp[data-popup-system="grow"]{
+  --ink:var(--lotion);--ink-soft:var(--lotion);--text:var(--lotion);--text-muted:var(--lotion);--accent:var(--lotion);
+  --aj-action-background:var(--noir);--aj-action-color:var(--lotion);
+  --aj-action-primary-background:var(--lotion);--aj-action-primary-color:var(--noir);
+  --aj-action-primary-border-color:var(--lotion);
+}
+#confirm[data-popup-kind="grow"][data-popup-system="grow"]{
+  --ink:var(--lotion);--ink-soft:var(--lotion);--text:var(--lotion);--text-muted:var(--lotion);--accent:var(--lotion);
+  --aj-action-background:var(--noir);--aj-action-color:var(--lotion);
+  --aj-action-primary-background:var(--lotion);--aj-action-primary-color:var(--noir);
+  --aj-action-primary-border-color:var(--lotion);
+}
+#sheet.auth-approval[data-popup-system="grow"]{
+  --ink:var(--lotion);--ink-soft:var(--lotion);--text:var(--lotion);--text-muted:var(--lotion);--accent:var(--lotion);
+  --aj-action-background:var(--noir);--aj-action-color:var(--lotion);
+  --aj-action-primary-background:var(--lotion);--aj-action-primary-color:var(--noir);
+  --aj-action-primary-border-color:var(--lotion);
+}
+#sheet.auth-approval[data-popup-system="grow"]{
+  --aj-approval-command-tool-color:var(--lotion);--aj-approval-command-tool-background:var(--noir)
+}
+#elev.secret .elev-input{background:var(--noir);caret-color:var(--lotion)}
+#elev.secret .elev-input::placeholder{color:var(--lotion)}
+#elev.secret :is(.elev-bad,.elev-err){color:var(--lotion);border-left:3px solid var(--peachy-feeling);border-radius:var(--r-sm);padding-left:var(--sp-2)}
+#confirm[data-popup-kind="grow"] .pkassist[data-state="fail"] .pkassist__text{color:var(--lotion);border-left:3px solid var(--peachy-feeling);border-radius:var(--r-sm);padding-left:var(--sp-2)}
+#pkp .pkassist[data-state="fail"] .pkassist__text{color:var(--lotion);border-left:3px solid var(--peachy-feeling);border-radius:var(--r-sm);padding-left:var(--sp-2)}
+#sheet.auth-approval .pkassist[data-state="fail"] .pkassist__text{color:var(--lotion);border-left:3px solid var(--peachy-feeling);border-radius:var(--r-sm);padding-left:var(--sp-2)}
+#elev.secret .elev-bad#elev-empty{color:var(--lotion)}
+#confirm[data-popup-kind="grow"] .pkassist__btn{background:var(--noir);color:var(--lotion);border-color:var(--lotion);text-decoration:none}
+#pkp .pkassist__btn{background:var(--noir);color:var(--lotion);border-color:var(--lotion);text-decoration:none}
+#sheet.auth-approval .pkassist__btn{background:var(--noir);color:var(--lotion);border-color:var(--lotion);text-decoration:none}
+#elev.secret #elev-deny{background:var(--noir);color:var(--lotion);border-color:var(--lotion);text-decoration:none}
+#lqr :is(.lqr-tg,.lqr-later){background:var(--noir);color:var(--lotion);border-color:var(--lotion);text-decoration:none}
+/* These growth cards share Settings' Noir surface. Keep their existing action roles and order. */
+#elev.secret[data-popup-context="settings"] .elev-acts>.aj-action{background:var(--lotion);color:var(--noir);border:0}
+#elev.secret[data-popup-context="settings"] #elev-deny{background:var(--lotion);color:var(--noir);border:0}
+#confirm[data-popup-context="settings"][data-popup-kind="grow"] .confirm-row .aj-action{background:var(--lotion);color:var(--noir);border:0}
+#pkp[data-popup-context="settings"] .pkp-acts .aj-action{background:var(--lotion);color:var(--noir);border:0}
+#sheet.auth-approval[data-popup-context="settings"] :is(.apprallow,.apprdeny,.cmdcopy){background:var(--lotion);color:var(--noir);border:0}
+:is(#confirm,#pkp,#sheet.auth-approval)[data-popup-context="settings"] .pkassist .pkassist__btn{background:var(--lotion);color:var(--noir);border:0}
 #elev[data-multi-secret] .elev-kicker{display:none}
 #elev[data-multi-secret] .elev-label{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
 #elev[data-multi-secret] .special-buttons541>:is(.special-allow541,.special-deny541){background:var(--lotion);color:var(--noir);border:0}
@@ -4789,6 +4829,28 @@ body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 /* Metadata fields keep their own inset and a complete, independently rounded copy control. */
 .elev .elev-rows dd.mono.cc-in{min-height:calc(var(--ui-tap) + 2 * var(--sp-2));padding-right:calc(var(--ui-tap) + 2 * var(--sp-2));display:flex;align-items:center}
 .elev .cc-in>.cc-btn{width:var(--ui-tap);height:var(--ui-tap);top:var(--sp-2);right:var(--sp-2);border-radius:var(--r-md)}
+/* Keep the existing secret actions reachable on a short portrait display. */
+@media(max-width:600px){
+  #elev.secret.aj-shared-popup[data-popup-system="grow"]>.box{padding-block:var(--ui-space-control) var(--sp-2)}
+  #elev.secret .elev-hide{top:var(--ui-space-control)}
+  #elev.secret .elev-kicker{min-height:var(--ui-space-content)}
+  #elev.secret .elev-input{margin-top:var(--sp-1)}
+  #elev.secret .elev-note{margin-top:var(--sp-1)}
+  #elev.secret .elev-left{margin-top:var(--sp-1)}
+  #elev.secret .elev-rows{margin-top:var(--sp-2)}
+  #elev.secret .elev-acts{margin-top:var(--sp-2);gap:var(--sp-2)}
+  #elev.secret .elev-label{margin-top:var(--sp-2)}
+  #elev.secret .elev-rows dt:not(:first-child){margin-top:var(--sp-1)}
+  #elev.secret .elev-rows dd.mono.cc-in{min-height:calc(var(--ui-tap) + 2 * var(--sp-1));padding-block:var(--sp-1)}
+  #elev.secret .elev-rows .cc-in>.cc-btn{top:var(--sp-1)}
+  #elev.secret .elev-acts>.aj-action{padding-block:var(--sp-2)}
+  #elev[data-multi-secret] .elev-rows{gap:calc(var(--sp-1) / 2)}
+  #elev[data-multi-secret] .elev-label{margin-top:var(--sp-1)}
+  #elev[data-multi-secret] .elev-input{min-height:var(--ui-tap)}
+  body:not([data-kb="1"]) #elev[data-multi-secret] .elev-acts{
+    position:sticky;bottom:0;background:var(--popup-grow-background,var(--water-color));
+  }
+}
 /* These approvals grow from the waterline and use Lotion foreground in both themes. */
 :is(#sheet[data-youtube-upload],#elev[data-sudo])[data-popup-system="grow"]{
   --ink:var(--lotion);--ink-soft:var(--lotion);
@@ -4820,6 +4882,8 @@ body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 :is(.elev,.sheet,.approval-special541) .elev-hide:is(:hover,:active,:focus-visible){background:var(--noir);color:var(--lotion)}
 :is(.elev,.sheet,.approval-special541) .elev-hide svg{display:block;width:24px;height:24px}
 .sheet .elev-hide{position:static}
+#elev.secret[data-popup-context="settings"] .elev-hide{background:var(--lotion);color:var(--noir)}
+#sheet.auth-approval[data-popup-context="settings"] .elev-hide{background:var(--lotion);color:var(--noir);border:0}
 /* The sealed card's heading uses the existing dialog-title typography; lh keeps its fold centered as that font scales. */
 .approval-special541.ajmodal.dlgcard .special-fold541.elev-hide{font:600 var(--dlg-fs-title)/1.3 var(--font-title);top:calc(2 * var(--ui-space-section) + .5lh - 22px)}
 

@@ -1,4 +1,4 @@
-// Presentation only: approval/biometric cards grow from the quota boundary; other dialogs stay Noir and centered.
+// Presentation only: growth sheets join the visible page or chat quota. Floating dialogs stay centered in Noir.
 let lastFrame=null,lastWidth=0;
 const nativeGrowTokens=new WeakMap();
 const $=id=>document.getElementById(id);
@@ -9,15 +9,25 @@ export function layoutPopups(roots) {
  if(s?.width>1&&s.height>1)lastFrame={top:s.top,left:s.left,width:s.width,bottom:s.bottom};
  const frame=lastFrame||{top:Math.max(edgeTop,document.querySelector('.top')?.getBoundingClientRect().bottom||60),left:0,width:innerWidth,bottom:edgeBottom-16};
  const top=Math.max(edgeTop,frame.top),bottom=Math.min(edgeBottom,frame.bottom,c?.height>1&&c.top>top?c.top:edgeBottom),height=Math.max(44,bottom-top),width=Math.min(lastWidth||frame.width-32,frame.width);
- const settings=$('settings')&&!$('settings').hidden;
- const quotaRect=$('m5h')?.getBoundingClientRect(),bodyRect=document.body.getBoundingClientRect(),water=$('water');
- if(water&&quotaRect?.height>0){const floor=Math.max(0,bodyRect.bottom-quotaRect.top)+'px';if(water.style.getPropertyValue('--water-floor')!==floor)water.style.setProperty('--water-floor',floor);}
+ const settingsPage=$('settings'),settings=settingsPage&&!settingsPage.hidden;
+ const settingsFrame=settings?settingsPage.getBoundingClientRect():null;
+ const settingsFill=settings?getComputedStyle(settingsPage).backgroundColor:null;
+ const quota=$('m5h')?.getBoundingClientRect(),bodyRect=document.body.getBoundingClientRect(),water=$('water');
+ if(quota?.height>0){
+  const floor=Math.max(0,bodyRect.bottom-quota.top)+'px';
+  // Keep the water element's viewport observer while sharing its measured line with other shells.
+  if(water&&water.style.getPropertyValue('--water-floor')!==floor)water.style.setProperty('--water-floor',floor);
+  if(document.body.style.getPropertyValue('--water-floor')!==floor)document.body.style.setProperty('--water-floor',floor);
+ }
  for(const root of roots){
   if(!visible(root))continue;
-  // 0308 (chairman 11-10 13:5x, INCOMING-0306): on Settings every interaction it starts — secret/auth-code card (#elev),
-  // QR (.lqr), secret-out (.sout), passkey, confirm — is a centred popup; a card grown from the quota line exists only in chat.
-  const settingPasskey=settings&&root.matches('.ajmodal,#confirm,#sheet.auth-approval');
-  const system=settingPasskey?'center':root.matches('#sheet,.approval-special541,.ajmodal.pkp,#elev,.ajmodal.sout:not(.sout-full),.ajmodal.lqr')||root.dataset.popupKind==='grow'?'grow':'center';
+  const biometric=root.matches('.ajmodal.pkp,[data-popup-kind="grow"]');
+  const settingsGrow=biometric||root.matches('#elev.secret,#sheet.auth-approval,.ajmodal.lqr');
+  const settingsCenter=settings&&!settingsGrow&&root.matches('.ajmodal,#confirm');
+  const responsive=root.matches('#term-sheetwrap,[data-note-sheet]');
+  const grow=responsive?matchMedia(root.matches('[data-note-sheet]')?'(max-width:600px)':'(width < 700px)').matches
+   :!settingsCenter&&(settingsGrow||root.matches('#sheet,.approval-special541,#elev,.ajmodal.sout:not(.sout-full)'));
+  const system=grow?'grow':'center';
   if(root.dataset.popupSystem!==system)root.dataset.popupSystem=system;
   // Centered cards repaint their own --pg to Noir; their full-screen veil must
   // retain the *page* state colour, just like the microphone veil does.
@@ -30,10 +40,14 @@ export function layoutPopups(roots) {
    if(!nativeGrowTokens.has(root))nativeGrowTokens.set(root,['--pg','--ink'].map(k=>[k,root.style.getPropertyValue(k)]));
    const page=getComputedStyle(document.body);for(const[k,value]of [['--pg',page.getPropertyValue('--pg').trim()],['--ink',page.color]])if(root.style.getPropertyValue(k)!==value)root.style.setProperty(k,value);
   }else if(nativeGrowTokens.has(root)){for(const[k,value]of nativeGrowTokens.get(root))value?root.style.setProperty(k,value):root.style.removeProperty(k);nativeGrowTokens.delete(root);}
-  const quota=$('m5h')?.getBoundingClientRect(),growBottom=quota?.height>0?Math.min(edgeBottom,quota.top):bottom,cardHeight=system==='grow'?Math.max(44,growBottom-top):height;
-  // Settings covers the viewport, independently of the chat stage's reading floor.
-  const settingCenter=settings&&system==='center',viewLeft=vv?.offsetLeft||0,viewWidth=vv?.width||innerWidth;
-  const geometry=settingCenter?{top:edgeTop,left:viewLeft,width:viewWidth,height:edgeBottom-edgeTop,cardWidth:Math.min(30*parseFloat(getComputedStyle(document.documentElement).fontSize),viewWidth-32),center:(edgeTop+edgeBottom)/2}:{top,left:system==='grow'?0:frame.left,width:system==='grow'?innerWidth:frame.width,height:cardHeight,cardWidth:system==='grow'?innerWidth:width,cardLeft:system==='grow'?0:frame.left+(frame.width-width)/2,center:top+height/2};
+  // A Settings sheet grows from its visible page rather than the chat quota behind it.
+  if(settings&&grow){
+   if(root.style.getPropertyValue('--popup-grow-background')!==settingsFill)root.style.setProperty('--popup-grow-background',settingsFill);
+  }else if(root.style.getPropertyValue('--popup-grow-background'))root.style.removeProperty('--popup-grow-background');
+  const growBottom=settingsFrame?Math.min(edgeBottom,settingsFrame.bottom):quota?.height>0?Math.min(edgeBottom,quota.top):bottom;
+  const cardHeight=grow?Math.max(44,growBottom-top):height;
+  const settingCenter=settings&&!grow,viewLeft=vv?.offsetLeft||0,viewWidth=vv?.width||innerWidth;
+  const geometry=settingCenter?{top:edgeTop,left:viewLeft,width:viewWidth,height:edgeBottom-edgeTop,cardWidth:Math.min(30*parseFloat(getComputedStyle(document.documentElement).fontSize),viewWidth-32),center:(edgeTop+edgeBottom)/2}:{top,left:grow?0:frame.left,width:grow?innerWidth:frame.width,height:cardHeight,cardWidth:grow?innerWidth:width,cardLeft:grow?0:frame.left+(frame.width-width)/2,center:top+height/2};
   if(settingCenter)geometry.cardLeft=viewLeft+(viewWidth-geometry.cardWidth)/2;
   for(const[k,v]of Object.entries(geometry)){const prop='--popup-'+k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value=v+'px';if(root.style.getPropertyValue(prop)!==value)root.style.setProperty(prop,value);}
   // ontop's fixed approval stays in the browser top layer, but must not inherit

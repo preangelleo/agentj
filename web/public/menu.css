@@ -889,6 +889,9 @@ html:lang(en) #settings .setnav small>.setnote-part{white-space:break-spaces}
 :is(.menupage,#settings,.ajpages) .aj-navigation-action--danger{background:var(--aj-navigation-action-danger-background,transparent);color:var(--aj-navigation-action-danger-color,var(--menu-danger));border-color:var(--aj-navigation-action-danger-border-color,var(--menu-danger))}
 
 :is(.menupage,#settings,.ajpages) .aj-action--danger:hover{background:var(--aj-action-danger-hover-background,var(--menu-danger));color:var(--aj-action-danger-hover-color,var(--menu-on-accent))}
+/* Pairing actions on the Settings page use Lotion and Peachy fills. */
+#settings #scan-repair.aj-action{background:var(--lotion);color:var(--noir);border:0}
+#settings #unpair.aj-action{background:var(--peachy-feeling);color:var(--noir);border:0}
 /* #577 aj-icon-action: independent equal initial contract. */
 :is(.menupage,#settings,.ajpages) .aj-icon-action--danger:hover{background:var(--aj-icon-action-danger-hover-background,var(--menu-danger));color:var(--aj-icon-action-danger-hover-color,var(--menu-on-accent))}
 

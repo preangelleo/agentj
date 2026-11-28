@@ -1,0 +1,32 @@
+{
+ "schema": "agentj.news/v1",
+ "version": "0.30.82",
+ "items": [
+  {
+   "zh": {
+    "what": "广场发布预览会指出包内需要修改的字段。服务端拒绝发布时，命令行显示原因和对应位置。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Plaza publish preview identifies fields that need fixing. If the server rejects a package, the CLI shows the reason and the affected path.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "统一手机遥控器的九类弹层。贴底弹层与页面水位同色，居中弹层使用 Noir，录音取消使用桃色提示。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Nine Web App popups now follow the shared styles. Bottom sheets match the page, centered popups use Noir, and recording cancellation uses a Peachy indicator.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  }
+ ]
+}

@@ -12,9 +12,15 @@ test('#577 same actual source SHA cannot bless a shortened theme writer set or r
 test('#577 released finite viewport setters cannot gain arbitrary token names or a detached-copy exemption',()=>{
  const files=tokenSourceFiles(web+'public'),current=tokenLinks(files);
  for(const path of ['js/cardplace.js','js/popup-layout.js']){
-  const entries=policy.entries.filter(e=>e.path===path);assert.ok(entries.length,path);
-  for(const mutate of [p=>p.entries.find(e=>e.path===path).tokenNames.push('--unreviewed'),p=>p.entries.find(e=>e.path===path).kind='detached-computed-style-copy']){
-   const wrong=structuredClone(policy);mutate(wrong);assert.ok(reviewDynamicWriters(tokenLinks(files),wrong).some(e=>e.path===path));
+  const sites=current.dynamicSetters.filter(e=>e.path===path);assert.ok(sites.length,path);
+  for(const site of sites){
+   const matches=entry=>entry.path===site.path&&entry.line===site.line&&entry.sourceSha256===site.sourceSha256;
+   // Historical source hashes remain in the table. Test each binding used by today's source.
+   assert.ok(policy.entries.some(matches),path+':'+site.line);
+   for(const mutate of [entry=>entry.tokenNames.push('--unreviewed'),entry=>entry.kind='detached-computed-style-copy']){
+    const wrong=structuredClone(policy);mutate(wrong.entries.find(matches));
+    assert.ok(reviewDynamicWriters(tokenLinks(files),wrong).some(matches),path+':'+site.line);
+   }
   }
  }
  const card=files.find(f=>f.path==='js/cardplace.js'),changed={...card,source:card.source.replace('Object.entries({top:r.top,left:r.left,width:r.width,height:r.height})','Object.entries({unreviewed:r.top,left:r.left,width:r.width,height:r.height})')};

@@ -353,8 +353,8 @@ class PublishAudit(PublisherSignature):
         self.assertIn("scripts/env.py 第 2 行", out)
 
     def test_the_servers_audit_refusal_is_explained(self):
-        self.srv.put_answer = (422, {"error": "audit_blocked", "rule": "remote-exec", "path": "scripts/i.sh", "line": 3})
-        with self.assertRaisesRegex(plaza.PlazaError, "静态审计.*scripts/i.sh line 3: remote-exec"):
+        self.srv.put_answer = (422, {"error": "audit_blocked", "rule": "remote-exec", "path": "scripts/demo.py", "line": 3})
+        with self.assertRaisesRegex(plaza.PlazaError, "静态审计.*scripts/demo.py line 3: remote-exec"):
             self.publish()
 
 

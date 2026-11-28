@@ -140,18 +140,7 @@
       "selector": ".cam .row button",
       "context": [],
       "occurrence": 0,
-      "bodySha256": "186a8f1c3d5a1558f468e5ba3e966519cc20e07e232f1eba54aa83a2dcbfdb2b",
-      "scopeIds": [
-        "cam"
-      ]
-    },
-    {
-      "id": "native-13",
-      "file": "public/app.css",
-      "selector": ".cam .row button.go",
-      "context": [],
-      "occurrence": 0,
-      "bodySha256": "d8e0e218c7a75c9775c62417d50977a1ce2a5db417b2009714e459f2ec88ac21",
+      "bodySha256": "32eb59db81bcc7526fad92e32d1a27b2865dcf801f38384a2f3d5e467e15fd05",
       "scopeIds": [
         "cam"
       ]

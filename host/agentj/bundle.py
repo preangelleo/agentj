@@ -25,27 +25,29 @@ import re
 import stat
 import unicodedata
 import zlib
+from pathlib import Path
 
-SCHEMA = "agentj.bundle/v1"
-CATALOG_SCHEMA = "agentj.catalog/v1"
-# packages built before the rename (0.9: R2 bundles, the official catalog) carry the old names: read them, write the new ones
-SCHEMAS = (SCHEMA, "agentjarvis.bundle/v1")
-CATALOG_SCHEMAS = (CATALOG_SCHEMA, "agentjarvis.catalog/v1")
-MAX_BUNDLE = 2 * 1024 * 1024          # compressed
-MAX_JSON = 12 * 1024 * 1024           # decompressed
-MAX_FILES = 500
-MAX_FILE = 2 * 1024 * 1024
-MAX_TOTAL = 8 * 1024 * 1024
-MAX_MANIFEST = 64 * 1024              # the server stores the manifest JSON in one column (≤ 64 KiB)
+# Publication contract shared with dashboard/src/bundle.ts, also present in the installed wheel.
+_RULES = json.loads(Path(__file__).with_name("plaza_bundle_rules.json").read_bytes())
+_LIMITS = _RULES["limits"]
+SCHEMAS = tuple(_RULES["bundleSchemas"])
+CATALOG_SCHEMAS = tuple(_RULES["fields"]["schema_version"]["enum"])
+SCHEMA, CATALOG_SCHEMA = SCHEMAS[0], CATALOG_SCHEMAS[0]
+MAX_BUNDLE = _LIMITS["maxBundle"]
+MAX_JSON = _LIMITS["maxJson"]
+MAX_FILES = _LIMITS["maxFiles"]
+MAX_FILE = _LIMITS["maxFile"]
+MAX_TOTAL = _LIMITS["maxTotal"]
+MAX_MANIFEST = _RULES["storedLimits"]["manifestMax"]
 PATH_MAX, SEGMENT_MAX = 200, 80
-CATEGORIES = ("agent-ops", "security", "browser", "communication", "content", "media", "seo", "storage", "data", "workflow")
+CATEGORIES = tuple(_RULES["fields"]["category"]["enum"])
 TYPES = ("skill", "workflow", "card")   # P432: card = one Agent J card (card/card.json + README + card/sample/), no code
 HARNESSES = ("claude_code", "codex", "opencode")
 
-NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,39}")
+NAME = re.compile(_RULES["namePattern"])
 SEMVER = re.compile(r"(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z.-]{1,40})?")
 HEX64 = re.compile(r"[0-9a-f]{64}")
-ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+ENV_NAME = re.compile(_RULES["envPattern"])
 _SEG_PUNCT = frozenset("._-+@")
 
 
@@ -53,9 +55,10 @@ class BundleError(ValueError):
     """One line: why the folder / bundle is refused. `reason` = a fixed code (the server's §9 shape: `path_forbidden`,
     `hidden_characters`, `too_deep`, …; `bad_bundle` when no finer code applies)."""
 
-    def __init__(self, msg: str, reason: str = "bad_bundle"):
+    def __init__(self, msg: str, reason: str = "bad_bundle", path: str | None = None):
         super().__init__(msg)
         self.reason = reason
+        self.path = path
 
 
 # bundle-rules.json `forbidden_paths_rule`: agent / IDE configuration that runs commands by itself (hooks, MCP servers,
@@ -68,7 +71,7 @@ _CLAUDE_SETTINGS = frozenset(("settings.json", "settings.local.json"))
 _HIDDEN = frozenset([0x061C, 0x180E, 0x200B, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2060, 0x2065),
                      *range(0x2066, 0x206A), *range(0xFFF9, 0xFFFC), *range(0xE0000, 0xE0080), 0xFEFF])
 _HIDDEN_RX = re.compile("[" + "".join(re.escape(chr(c)) for c in sorted(_HIDDEN)) + "]")
-MAX_DEPTH = 32                        # bundle-rules.json `depth_rule`
+MAX_DEPTH = _LIMITS["maxDepth"]                        # bundle-rules.json `depth_rule`
 
 
 def sha256(data: bytes) -> str:
@@ -563,7 +566,7 @@ def check_initialization(m, files):
         raise BundleError('invalid initialization.schema.json', 'bad_initialization') from None
 
 
-def build(directory, manifest_override: dict | None = None) -> tuple[bytes, dict]:
+def build(directory, manifest_override: dict | None = None, *, publishing=False) -> tuple[bytes, dict]:
     """Package folder → (bundle bytes, manifest). `manifest.files` is regenerated; `manifest_override` (publish) is merged
     over manifest.json before the checks."""
     directory = os.fspath(directory)
@@ -581,6 +584,8 @@ def build(directory, manifest_override: dict | None = None) -> tuple[bytes, dict
     if total > MAX_TOTAL:
         raise BundleError(f"files total {total} bytes > 8 MiB")
     m = {**m, **(manifest_override or {}), "files": files_list(files)}
+    if publishing:
+        _check_publish_fields(m, files)
     check_manifest(m, set(files))
     # The installer itself is not an external program dependency. Legacy signed bundles
     # remain parseable unchanged; only newly built/published bundles are refused.
@@ -679,3 +684,194 @@ def parse(data: bytes) -> tuple[dict, dict]:
         _check_params_schema(files["params.schema.json"])
     check_initialization(m, files)
     return m, files
+
+
+# ------------------------------------------------------------------ community publish
+_NOT_PRESENT = object()
+_RULE_TYPES = {"object": dict, "string": str, "boolean": bool}
+
+
+def _matches(value, rule: dict, patterns: dict) -> bool:
+    if value is _NOT_PRESENT:
+        return rule.get("optional", False)
+    if value is None:
+        return rule.get("nullable", False)
+    if "type" in rule and not isinstance(value, _RULE_TYPES[rule["type"]]):
+        return False
+    if "enum" in rule and value not in rule["enum"]:
+        return False
+    if "length" in rule and not _str(value, *rule["length"]):
+        return False
+    pattern = rule.get("pattern")
+    if pattern and not (isinstance(value, str) and re.fullmatch(patterns.get(pattern, pattern), value)):
+        return False
+    if "keys" in rule and not (isinstance(value, dict) and set(value) <= set(rule["keys"])):
+        return False
+    if "properties" in rule and not (isinstance(value, dict) and all(
+            _matches(value.get(k, _NOT_PRESENT), child, patterns) for k, child in rule["properties"].items())):
+        return False
+    items = rule.get("items")
+    return items is None or (isinstance(value, list) and len(value) <= rule["maxItems"] and
+                             all(_matches(item, items, patterns) for item in value))
+
+
+def _publish_problem(reason: str, path: str) -> None:
+    raise BundleError(f"{reason} (path: {path})", reason, path)
+
+
+def _publish_fields(manifest: dict, fields: dict, rules: dict) -> None:
+    for field, rule in fields.items():
+        value = manifest
+        for part in field.split("."):
+            value = value.get(part, _NOT_PRESENT) if isinstance(value, dict) else _NOT_PRESENT
+        if not _matches(value, rule, rules):
+            _publish_problem(field, field)
+
+
+def _required_files(manifest: dict, files: dict, kind: dict) -> None:
+    if manifest["entry"] not in files:
+        _publish_problem("entry", "entry")
+    reason = f"{manifest['type']}_files"
+    for path in kind["required"]:
+        if path not in files:
+            _publish_problem(reason, path)
+    if kind.get("entry") and manifest["entry"] != kind["entry"]:
+        _publish_problem(reason, kind["entry"])
+    if kind.get("extraPath"):
+        for path in files:
+            if path not in kind["required"] and not re.fullmatch(kind["extraPath"], path):
+                _publish_problem(reason, path)
+    install = manifest.get("install") or {}
+    if kind.get("noInstallCommands") and (install.get("post_install") or install.get("verify") is not None):
+        _publish_problem("card_install", "install")
+    prefix = kind.get("requiredPrefix")
+    if prefix and not any(path.startswith(prefix) for path in files):
+        _publish_problem("workflow_scaffold", prefix)
+
+
+def _clean_stored(value, one_line: set[str], clean_text, key=""):
+    if isinstance(value, str):
+        return clean_text(value, key in one_line)
+    if isinstance(value, list):
+        return [_clean_stored(item, one_line, clean_text, key) for item in value]
+    if isinstance(value, dict):
+        return {k: item if not key and k == "files" else _clean_stored(item, one_line, clean_text, k)
+                for k, item in value.items()}
+    return value
+
+
+def _stored_size(value, *, path: str) -> int:
+    """Bound UTF-8 JSON.stringify size. In JS, all JSON numbers are binary64 and can use up to 25 bytes."""
+    try:
+        raw = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (ValueError, OverflowError):
+        _publish_problem("bad_json", path)
+
+    def number_padding(obj):
+        if isinstance(obj, float) or (type(obj) is int and abs(obj) >= 2 ** 53):
+            return max(0, 25 - len(str(obj)))
+        if isinstance(obj, dict):
+            return sum(number_padding(item) for item in obj.values())
+        if isinstance(obj, list):
+            return sum(number_padding(item) for item in obj)
+        return 0
+
+    return len(raw) + number_padding(value)
+
+
+def _check_publish_fields(manifest: dict, files: dict) -> None:
+    """Match the Dashboard manifest content rules, before applying the host-only install rules."""
+    rules = _RULES
+    _publish_fields(manifest, rules["fields"], rules)
+    kind = rules["packageTypes"][manifest["type"]]
+    _required_files(manifest, files, kind)
+    _publish_fields(manifest, kind.get("fields", {}), rules)
+
+    reserved = set(rules["reservedPrefixes"])
+
+    def is_reserved(name):
+        return any(name == prefix or name.startswith(prefix + "-") for prefix in reserved)
+
+    if is_reserved(manifest["name"]):
+        _publish_problem("name_taken", "name")
+    if manifest["type"] == "skill" and is_reserved(manifest["install"]["skill_dir_name"]):
+        _publish_problem("skill_dir_reserved", "install.skill_dir_name")
+    if manifest.get("certified", False) is not False:
+        _publish_problem("certified", "certified")
+    signature_key = rules["hostSignatureKey"]
+    if signature_key in manifest:
+        _publish_problem("reserved_key", signature_key)
+    # The server also folds Unicode paths via upper/lower, e.g. dotless ı and ASCII i.
+    folded = set()
+    for path in files:
+        key = path.upper().lower()
+        if key in folded:
+            _publish_problem("path_case_duplicate", path)
+        folded.add(key)
+
+
+def check_publish(manifest: dict, files: dict, *, clean_text, signed_at: int) -> dict:
+    """Check the public fields the Dashboard would store from the exact built draft."""
+    rules = _RULES
+    signature_key = rules["hostSignatureKey"]
+    caps = rules["storedLimits"]
+    one_line = set(rules["storedText"])
+    cleaned = _clean_stored(manifest, one_line, clean_text)
+    display_fields = {k: rules["fields"][k] for k in rules["storedRequired"]}
+    _publish_fields(cleaned, display_fields, rules)
+
+    try:
+        readme = clean_text(files["README.md"].decode("utf-8-sig"))
+    except UnicodeDecodeError:
+        _publish_problem("readme", "README.md")
+    if not readme or len(readme) > caps["readmeMax"]:
+        _publish_problem("readme", "README.md")
+    # Server appends the exact fixed-width signature fields after cleaning. No key is used to measure them.
+    stored = {**cleaned, signature_key: {"host_pubkey": "A" * 43, "host_sig": "A" * 86, "host_signed_at": signed_at}}
+    if _stored_size(stored, path="manifest.json") > caps["manifestMax"]:
+        _publish_problem("manifest", "manifest.json")
+    if manifest["type"] == "workflow":
+        params = _clean_stored(json.loads(files["params.schema.json"]), one_line, clean_text)
+        if _stored_size(params, path="params.schema.json") > caps["paramsMax"]:
+            _publish_problem("params_schema", "params.schema.json")
+    return cleaned
+
+
+# Server diagnostics consist of fixed machine reasons and either a contract path or a path in these exact approved bytes.
+# Treat everything else in an error response as untrusted. In particular never print an echoed URL, input value or object.
+_PUBLISH_FIELDS = set(_RULES["fields"]) | {
+    field for kind in _RULES["packageTypes"].values() for field in kind.get("fields", {})
+}
+_PUBLISH_PATHS = _PUBLISH_FIELDS | {
+    "manifest.json", "README.md", "params.schema.json", "SKILL.md", "card/card.json", "scaffold/", _RULES["hostSignatureKey"],
+}
+_PUBLISH_REASONS = _PUBLISH_FIELDS | {
+    "bundle", "decompressed", "not_gzip", "bad_gzip", "bad_json", "bundle_shape", "manifest", "too_deep",
+    "files", "file_entry", "path", "path_not_nfc", "path_length", "path_segment", "path_forbidden",
+    "hidden_characters",
+    "manifest_in_files", "files_order", "path_case_duplicate", "file", "file_b64", "total", "manifest_files",
+    "file_bytes", "file_sha256", "card_files", "card_install", "skill_files", "workflow_files", "workflow_scaffold",
+    "params_schema", "readme", "sha256_mismatch", "manifest_mismatch", "reserved_key", "skill_dir_reserved",
+}
+
+
+def publish_response_path(path, files: dict) -> str:
+    if not isinstance(path, str):
+        return ""
+    if path in _PUBLISH_PATHS or path in files:
+        return path
+    if path.startswith("manifest.json:"):
+        field = path.removeprefix("manifest.json:")
+        return path if field in _PUBLISH_FIELDS else "manifest.json"
+    return ""
+
+
+def publish_error_details(answer: dict, files: dict) -> str:
+    reason = answer.get("reason")
+    path = publish_response_path(answer.get("path"), files)
+    details = []
+    if isinstance(reason, str) and reason in _PUBLISH_REASONS:
+        details.append(f"reason: {reason}")
+    if path:
+        details.append(f"path: {path}")
+    return f" ({'; '.join(details)})" if details else ""

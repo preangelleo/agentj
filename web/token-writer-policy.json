@@ -152,6 +152,44 @@
         "--popup-top",
         "--popup-width"
       ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 41,
+      "sourceSha256": "d941e4359015eaea5b81535b3b2c067ef24efe0faddf0fb5962ec94594f19476",
+      "kind": "finite-layout-vars",
+      "purpose": "0.30.82 popup layout copies only --pg and --ink from the page into a growth sheet inside a native dialog.",
+      "tokenNames": [
+        "--ink",
+        "--pg"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 42,
+      "sourceSha256": "d941e4359015eaea5b81535b3b2c067ef24efe0faddf0fb5962ec94594f19476",
+      "kind": "finite-layout-vars",
+      "purpose": "0.30.82 popup layout restores only the saved --pg and --ink when the growth sheet leaves the native dialog.",
+      "tokenNames": [
+        "--ink",
+        "--pg"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 52,
+      "sourceSha256": "d941e4359015eaea5b81535b3b2c067ef24efe0faddf0fb5962ec94594f19476",
+      "kind": "finite-layout-vars",
+      "purpose": "0.30.82 popup A/B uses the finite viewport geometry below. Settings now contributes its own visible bottom; the writer and available keys are unchanged.",
+      "tokenNames": [
+        "--popup-card-left",
+        "--popup-card-width",
+        "--popup-center",
+        "--popup-height",
+        "--popup-left",
+        "--popup-top",
+        "--popup-width"
+      ]
     }
   ]
 }

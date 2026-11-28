@@ -1,0 +1,65 @@
+{
+  "namePattern": "[a-z0-9][a-z0-9-]{1,39}",
+  "semverPattern": "(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?",
+  "envPattern": "[A-Za-z_][A-Za-z0-9_]{0,63}",
+  "reservedPrefixes": ["agentj", "agent-j", "agentjarvis", "agent-jarvis", "jarvis", "official", "admin", "moderator", "plaza"],
+  "hostSignatureKey": "_agentj_host_signature",
+  "bundleSchemas": ["agentj.bundle/v1", "agentjarvis.bundle/v1"],
+  "limits": {"maxBundle": 2097152, "maxJson": 12582912, "maxFiles": 500, "maxFile": 2097152, "maxTotal": 8388608, "maxDepth": 32},
+  "storedLimits": {"readmeMax": 40000, "manifestMax": 65536, "paramsMax": 32768},
+  "storedRequired": ["title_zh", "title_en", "summary_zh", "summary_en", "tags"],
+  "storedText": ["title_zh", "title_en", "summary_zh", "summary_en", "tags", "name", "version", "type", "category", "skill_dir_name"],
+  "fields": {
+    "schema_version": {"enum": ["agentj.catalog/v1", "agentjarvis.catalog/v1"]},
+    "name": {"pattern": "namePattern"},
+    "type": {"enum": ["skill", "workflow", "card"]},
+    "version": {"pattern": "semverPattern", "length": [1, 64]},
+    "title_zh": {"length": [1, 80]},
+    "title_en": {"length": [1, 80]},
+    "summary_zh": {"length": [1, 500]},
+    "summary_en": {"length": [1, 500]},
+    "tags": {"optional": true, "items": {"length": [1, 24]}, "maxItems": 12},
+    "category": {"enum": ["agent-ops", "security", "browser", "communication", "content", "media", "seo", "storage", "data", "workflow"]},
+    "entry": {"type": "string"},
+    "certified": {"optional": true, "type": "boolean"},
+    "verification": {"optional": true, "nullable": true, "type": "object"},
+    "license": {"optional": true, "nullable": true, "length": [0, 400]},
+    "author": {"optional": true, "nullable": true, "length": [0, 400]},
+    "updated_at": {"optional": true, "nullable": true, "length": [0, 400]},
+    "upstream": {"optional": true, "nullable": true, "type": "object"},
+    "audience": {"optional": true, "items": {"length": [1, 40]}, "maxItems": 16},
+    "requires": {"optional": true, "nullable": true, "type": "object"},
+    "requires.harness": {"optional": true, "items": {"length": [1, 32]}, "maxItems": 8},
+    "requires.os": {"optional": true, "items": {"length": [1, 32]}, "maxItems": 8},
+    "requires.cli": {"optional": true, "items": {"properties": {"name": {"length": [1, 64]}}}, "maxItems": 64},
+    "requires.python_requirements": {"optional": true, "nullable": true, "length": [1, 200]},
+    "requires.env": {"optional": true, "items": {"properties": {"name": {"pattern": "envPattern"}}}, "maxItems": 64},
+    "requires.accounts": {"optional": true, "items": {"type": "object"}, "maxItems": 32},
+    "requires.skills": {"optional": true, "items": {"pattern": "namePattern"}, "maxItems": 64},
+    "permissions": {"optional": true, "keys": ["tools", "network", "exec", "secrets"]},
+    "permissions.tools": {"optional": true, "items": {"pattern": "[A-Za-z][A-Za-z0-9_]{0,63}"}, "maxItems": 40},
+    "permissions.secrets": {"optional": true, "items": {"pattern": "envPattern"}, "maxItems": 60},
+    "permissions.network": {"optional": true, "type": "boolean"},
+    "permissions.exec": {"optional": true, "type": "boolean"},
+    "install": {"optional": true, "nullable": true, "type": "object"},
+    "install.post_install": {"optional": true, "items": {"length": [1, 400]}, "maxItems": 32},
+    "install.verify": {"optional": true, "nullable": true, "length": [1, 400]}
+  },
+  "packageTypes": {
+    "card": {
+      "required": ["README.md", "card/card.json"],
+      "entry": "card/card.json",
+      "extraPath": "card/sample/[A-Za-z0-9][A-Za-z0-9._-]{0,63}",
+      "noInstallCommands": true
+    },
+    "skill": {"required": ["SKILL.md", "README.md"], "fields": {"install.skill_dir_name": {"pattern": "namePattern"}}},
+    "workflow": {
+      "required": ["README.md", "params.schema.json"],
+      "requiredPrefix": "scaffold/",
+      "fields": {
+        "roles": {"optional": true, "items": {"type": "object"}, "maxItems": 64},
+        "automations": {"optional": true, "items": {"type": "object"}, "maxItems": 64}
+      }
+    }
+  }
+}

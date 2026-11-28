@@ -4,6 +4,7 @@ Run (in host/): .venv/bin/python -m unittest discover -s tests -p test_plaza.py
 """
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import contextlib
+import importlib.util
 import io
 import json
 import os
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unicodedata
 import unittest
 from unittest import mock
@@ -119,6 +121,19 @@ class Fence(unittest.TestCase):
         self.assertNotIn("exec", x)
         self.assertIsNone(plaza.parse_item({"id": "pz_../../etc"}))
         self.assertIsNone(plaza.parse_reply({"id": PID}))
+
+
+class UpgradeImports(unittest.TestCase):
+    def test_new_plaza_loads_with_cached_predecessor_text(self):
+        # The old updater keeps its text module in memory for its in-process health check.
+        from agentj import text
+        legacy = types.ModuleType("agentj.text")
+        legacy.clean, legacy.clean_line = text.clean, text.clean_line
+        spec = importlib.util.spec_from_file_location("agentj._plaza_upgrade_fixture", plaza.__file__)
+        loaded = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {"agentj.text": legacy}):
+            spec.loader.exec_module(loaded)
+        self.assertEqual(loaded.plaza_clean(" e\u0301\u200c\t x ", True), "é x")
 
 
 @unittest.skipUnless(shutil.which("node") and (ROOT / "dashboard" / "src" / "plaza.ts").exists(),

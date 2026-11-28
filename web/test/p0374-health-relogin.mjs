@@ -31,7 +31,8 @@ try {
     let view = { harnesses: [row], flow: null, dot: true };
     const p = await newPage(browser, width, height, theme, { touch: width < 500, allow: [pageUrl, fake.relay + '/'] });
     const save = async name => out && writeFileSync(join(out, `relogin-${base ? 'before' : 'after'}-${width}-${theme}-${name}.png`), await shoot(p, ''));
-    const css = async selector => evaluate(p, `getComputedStyle(document.querySelector(${JSON.stringify(selector)})).color`);
+    const css = async (selector, property = 'color') => evaluate(p,
+      `getComputedStyle(document.querySelector(${JSON.stringify(selector)})).getPropertyValue(${JSON.stringify(property)})`);
     const showView = async next => {
       view = next;
       await fake.send({ t: 'auth_rescue', view });
@@ -119,7 +120,11 @@ try {
         await waitFor(p, '!document.getElementById("sheet").hidden && document.getElementById("apprAllowLbl").textContent === "开始重新登录" && !document.getElementById("apprAllow").disabled');
         assert.deepEqual(sent, { kind: 'claude', id: notice.id, tag: health, route: undefined, account: undefined });
         await sleep(350);
-        assert.equal(await css('#askTags .arconfirm'), peachy);
+        const confirmWarning = '#askTags .arconfirm';
+        assert.equal(await css(confirmWarning), 'rgb(250, 249, 245)', 'warning copy remains Lotion');
+        assert.equal(await css(confirmWarning, 'border-inline-start-color'), peachy);
+        assert.equal(await css(confirmWarning, 'border-inline-start-style'), 'solid');
+        assert.equal(await css(confirmWarning, 'border-inline-start-width'), '3px');
         await save('confirm');
         const tap = await evaluate(p, `(() => {
           const rect = document.getElementById('apprAllow').getBoundingClientRect();
